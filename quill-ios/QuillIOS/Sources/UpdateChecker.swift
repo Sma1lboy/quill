@@ -24,24 +24,67 @@ final class UpdateChecker: ObservableObject {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     }
 
-    func check() {
-        Task {
-            guard let (data, _) = try? await URLSession.shared.data(from: Self.manifestURL),
-                  let html = String(data: data, encoding: .utf8),
-                  // Manifest is embedded in the share page as the first {...} block.
-                  let start = html.firstIndex(of: "{"),
-                  let end = html[start...].firstIndex(of: "}")
-            else { return }
-            let json = String(html[start...end])
-            guard let manifest = try? JSONDecoder().decode(
-                Manifest.self, from: Data(json.utf8)
-            ) else { return }
+    /// Pull the manifest out of the share page. The page is a full HTML
+    /// document whose share-bar CSS contains `{...}` blocks, so the *first*
+    /// brace is a style rule, never the manifest — the manifest is appended
+    /// after the closing markup, making the trailing `{...}` the right slice.
+    static func extractManifest(from html: String) -> Manifest? {
+        guard let start = html.lastIndex(of: "{"),
+              let end = html.lastIndex(of: "}"),
+              start < end
+        else { return nil }
+        return try? JSONDecoder().decode(
+            Manifest.self, from: Data(html[start...end].utf8)
+        )
+    }
 
-            // Numeric compare when possible; string compare as fallback.
-            let newer = (Int(manifest.build) ?? 0) > (Int(Self.currentBuild) ?? 0)
-            available = newer ? manifest : nil
+    /// Build numbers are integers (`18174101`), so compare them as integers —
+    /// a string compare would rank "9" above "18174101". An unparseable
+    /// manifest build stays at 0 and therefore never prompts.
+    static func isNewer(_ manifestBuild: String, than current: String) -> Bool {
+        (Int(manifestBuild) ?? 0) > (Int(current) ?? 0)
+    }
+
+    func check() {
+        #if DEBUG
+        Self._selfCheck()
+        #endif
+        Task {
+            // Explicit timeout: a hung server must not leave the task parked
+            // on the default 60s system timeout.
+            var request = URLRequest(url: Self.manifestURL)
+            request.timeoutInterval = 10
+            guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let html = String(data: data, encoding: .utf8),
+                  let manifest = Self.extractManifest(from: html)
+            else { return }
+
+            available = Self.isNewer(manifest.build, than: Self.currentBuild) ? manifest : nil
         }
     }
+
+    #if DEBUG
+    /// Self-check for the two things that silently broke this feature: the
+    /// brace slice (CSS braces come first in the real page) and integer
+    /// build comparison (string compare gets it backwards).
+    static func _selfCheck() {
+        let page = """
+        <style>#bs{position:fixed;top:0}</style><div>hi</div>
+        {"version":"0.2.0","build":"18174200","notes":"x"}
+        """
+        let m = extractManifest(from: page)
+        assert(m?.build == "18174200", "manifest must come from the trailing brace block, not the CSS rule")
+        assert(isNewer("18174200", than: "18174101"))
+        assert(!isNewer("18174101", than: "18174101"))
+        assert(isNewer("9", than: "8"))
+        // The bug a string compare would introduce, in both directions.
+        assert(!isNewer("9", than: "18174101"), "\"9\" > \"18174101\" as strings; must be false numerically")
+        assert(isNewer("18174101", than: "9"))
+        assert(!isNewer("not-a-number", than: "18174101"))
+        assert(extractManifest(from: "<style>a{b:c}</style>") == nil)
+    }
+    #endif
 }
 
 /// Terracotta pill shown when a newer build exists on the Mac.
