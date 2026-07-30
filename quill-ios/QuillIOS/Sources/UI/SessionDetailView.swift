@@ -552,8 +552,43 @@ private struct NoteControls: View {
     @ObservedObject var state: AppState
     let id: String
     let isActive: Bool
+    @State private var importing = false
+    @State private var busy = false
+    @State private var importError: String?
 
     var body: some View {
+        VStack(spacing: 6) {
+            if let importError {
+                Text(importError)
+                    .font(Theme.mono(11))
+                    .foregroundStyle(Theme.error)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            controls
+        }
+        // Copies in from Files/iCloud, so it must be a security-scoped read.
+        .fileImporter(
+            isPresented: $importing,
+            allowedContentTypes: AudioImport.contentTypes
+        ) { result in
+            guard case .success(let url) = result else { return }
+            busy = true
+            importError = nil
+            Task {
+                defer { busy = false }
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                do {
+                    try await state.importAudio(id: id, from: url)
+                } catch {
+                    importError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private var controls: some View {
         HStack(spacing: 10) {
             if !isActive {
                 Button {
@@ -588,6 +623,31 @@ private struct NoteControls: View {
                 .buttonStyle(PressableButtonStyle())
                 .disabled(state.isRecording) // busy with another session
                 .opacity(state.isRecording ? 0.45 : 1)
+
+                // Import sits beside record, not in the overflow menu: an
+                // empty note is exactly the moment someone has a voice memo
+                // or a meeting recording to bring in, and it's the only
+                // moment it's allowed (mic.caf is never replaced).
+                Button { importing = true } label: {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Theme.accent)
+                        .frame(width: 60, height: 60)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Theme.surface)
+                                .shadow(color: Color.black.opacity(0.10), radius: 10, y: 4)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .strokeBorder(Theme.line, lineWidth: 1)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(PressableButtonStyle())
+                .disabled(state.isRecording || busy)
+                .opacity(state.isRecording || busy ? 0.45 : 1)
+                .accessibilityLabel("Import audio or video")
             } else {
                 HStack(spacing: 12) {
                     Text(AppState.format(state.elapsed))

@@ -117,6 +117,23 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Bring an existing recording into a note — a voice memo, a meeting
+    /// export, a video whose audio is the point. The file is transcoded into
+    /// the session's `mic.caf`, so everything downstream (queue, playback,
+    /// search, enhance) treats it exactly like a take made in the app.
+    func importAudio(id: String, from source: URL) async throws {
+        #if DEBUG
+        await AudioImport.selfCheck()
+        #endif
+        let dir = root.appendingPathComponent(id, isDirectory: true)
+        guard !isBusy(id: id), recordingID != id else {
+            throw AudioImport.ImportError.sessionBusy
+        }
+        _ = try await AudioImport.into(dir, from: source)
+        refreshSessions()
+        await transcriber.enqueue(dir)
+    }
+
     /// Start (or restart) recording inside an existing note folder.
     func startNoteRecording(id: String) {
         guard !isRecording, !starting else { return }
