@@ -18,8 +18,17 @@ struct SwipeToDeleteRow<Content: View>: View {
 
     @State private var offset: CGFloat = 0
     @State private var open = false
+    /// Delete fires at most once per row. Two paths reach it (a fling in
+    /// `onEnded`, a tap on the revealed trash), and `deleteSession` moves the
+    /// folder to `.trash` after clearing whatever sits there — so a second
+    /// fire on the same id deletes the undo backup the first one just made.
+    @State private var deleted = false
 
     private func commitDelete() {
+        // `disabled` masks the drag gesture but not the revealed button, so
+        // the busy check belongs here too — this is the one path both take.
+        guard !deleted, !disabled else { return }
+        deleted = true
         withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
             offset = 0
             open = false

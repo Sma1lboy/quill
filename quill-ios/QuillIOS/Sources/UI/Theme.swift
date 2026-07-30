@@ -50,15 +50,49 @@ enum Theme {
 
     static let radius: CGFloat = 8
 
-    static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
+    /// Dynamic Type scale for DESIGN.md's pinned point sizes.
+    ///
+    /// DESIGN.md pins sizes in points (kickers 10pt, stage tags, timers) and
+    /// `.system(size:)` freezes them outright — so every mono label in quill,
+    /// which is most of its text, ignored the user's Larger Text setting
+    /// completely. `UIFontMetrics` keeps the pinned size as the *base*: at the
+    /// default setting the factor is exactly 1.0, so nothing moves a pixel for
+    /// a default user; only someone who asked for bigger text sees a change.
+    ///
+    /// Capped because the grammar's pinned heights (46pt rows, 60pt record
+    /// bar) and single-line dock can't absorb the 3.1× AX5 ramp. Callers with
+    /// room to grow can pass a larger `cap`.
+    ///
+    /// ponytail: reads the app-wide content size category rather than the
+    /// SwiftUI environment, so it can't be clamped per-subtree with
+    /// `.dynamicTypeSize()` and re-scales only when a body happens to
+    /// re-evaluate. `@ScaledMetric` at ~90 call sites would be strictly
+    /// reactive — and would also break the `Text + Text` concatenation in
+    /// SearchView. Upgrade only if live re-layout is actually asked for.
+    static func scaled(_ size: CGFloat, cap: CGFloat = 1.6) -> CGFloat {
+        min(UIFontMetrics(forTextStyle: .body).scaledValue(for: size), size * cap)
     }
 
+    static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: scaled(size), weight: weight, design: .monospaced)
+    }
+
+    /// System face for prose (titles, transcript text) — same scaling deal as
+    /// `mono`, and the reason transcript body text at a pinned 14pt was
+    /// unreadable for anyone using Larger Text.
+    static func face(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: scaled(size), weight: weight)
+    }
+
+    /// Kickers are single-line labels by construction (`RECENT`, `LOCAL ·
+    /// ON-DEVICE`); pinning the line count keeps a scaled-up one from
+    /// reflowing and blowing a fixed-height row open.
     static func kicker(_ text: String) -> some View {
         Text(text.uppercased())
             .font(mono(11, .medium))
             .tracking(1.2)
             .foregroundStyle(muted)
+            .lineLimit(1)
     }
 
     /// Critically damped house spring; fades under Reduce Motion.
@@ -69,6 +103,28 @@ enum Theme {
             : .spring(response: 0.35, dampingFraction: 1.0)
     }
 }
+
+#if DEBUG
+extension Theme {
+    /// The one runnable check for the scaling helper: the cap holds, the
+    /// default text size is a no-op (so no screen shifts for a default user),
+    /// and scaling is monotonic.
+    static func selfCheck() {
+        // Cap is absolute — never exceeded whatever the user's setting is.
+        for size in [8, 10, 11, 16, 19] as [CGFloat] {
+            assert(scaled(size) <= size * 1.6 + 0.001, "cap breached at \(size)pt")
+            assert(scaled(size) >= size * 0.7, "scaled below the small-text floor at \(size)pt")
+            assert(scaled(size, cap: 1.0) == size, "cap 1.0 must pin the size")
+        }
+        // DESIGN.md's pinned sizes stay ordered after scaling.
+        assert(scaled(10) < scaled(11), "10pt kicker outgrew the 11pt kicker")
+        assert(scaled(16) < scaled(19), "record label outgrew the timer")
+        if UIApplication.shared.preferredContentSizeCategory == .large {
+            assert(scaled(10) == 10, "default text size must be a no-op")
+        }
+    }
+}
+#endif
 
 /// `[ quill ]` — terracotta brackets, ink word. The kobe bracket-chip grammar.
 struct BracketChip: View {

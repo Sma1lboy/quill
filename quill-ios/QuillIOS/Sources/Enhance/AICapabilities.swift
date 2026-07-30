@@ -12,7 +12,42 @@ enum AICapabilities {
         var lines: [(String, String)] = []
     }
 
+    /// The values that mean "this works". Exact matches, because the strings
+    /// are produced right here — a substring test reads "unavailable" as
+    /// available and "not supported" as supported.
+    private static let goodValues: Set<String> = [
+        "available", "supported", "below limit",
+    ]
+
+    /// Whether a probe value is a working state, for the row's tint.
+    static func isGood(_ value: String) -> Bool {
+        // "12 supported" is the languages count — good when it's not zero.
+        if value.hasSuffix(" supported") {
+            return (Int(value.dropLast(" supported".count)) ?? 0) > 0
+        }
+        return goodValues.contains(value)
+    }
+
+    #if DEBUG
+    /// The pairs the old substring test got backwards, both directions.
+    static func _selfCheck() {
+        assert(isGood("available"))
+        assert(!isGood("unavailable"), "\"unavailable\" contains \"available\"")
+        assert(isGood("supported"))
+        assert(!isGood("not supported"), "\"not supported\" contains \"supported\"")
+        assert(isGood("12 supported") && !isGood("0 supported"))
+        assert(isGood("below limit") && !isGood("limit reached"))
+        for dead in ["AI not enabled", "model not ready", "device not eligible",
+                     "requires iOS 26", "requires iOS 27", "not in SDK", "system not ready"] {
+            assert(!isGood(dead), dead)
+        }
+    }
+    #endif
+
     static func probe() -> Report {
+        #if DEBUG
+        _selfCheck()
+        #endif
         var report = Report()
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
