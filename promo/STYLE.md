@@ -55,10 +55,23 @@ ffmpeg -y -i out/quill-promo.mp4 -i .media/audio/bgm/bgm_002.wav \
 - `public/{home,transcript,detail}-light-framed.png` — the three device-framed
   screenshots the composition loads by name via `staticFile()`. Copies of the
   same-named files in `../site/framed/`; that directory is the source, and it
-  also holds the dark + settings variants this cut doesn't use.
-  ponytail: no regeneration script is checked in — the framer was a throwaway
-  `/tmp/frame.py`, long gone. Re-shoot in the simulator and re-frame by hand
-  if the UI moves; commit the script then if it happens twice.
+  also holds the dark + settings variants this cut doesn't use. Keep the copies
+  byte-identical to the source — the same shots are in the README row and the
+  landing page, and a drifted copy shows up as one phone that doesn't match.
+- Regenerating them: shoot at 1206×2622 (iPhone 16 Pro, logical 402×874 @3x —
+  another model breaks the row), then
+  `python3 ../site/framed/frame.py <raw>.png ../site/framed/<name>-framed.png`
+  and copy the three light ones here. Raws live in `../quill-ios/screenshots/`.
+  Drive the screens with the existing `ScreenshotDriver*` classes in
+  `QuillIOSUITests/RecordFlowTests.swift` (they hold a screen open ~25s) and
+  capture with `xcrun simctl io <device> screenshot`. Launch with
+  `SIMCTL_CHILD_QUILL_SKIP_ONBOARDING=1` or you photograph the first-run page,
+  and pin the status bar first:
+  `xcrun simctl status_bar <device> override --time 9:41 --cellularBars 4 --wifiBars 3 --batteryState discharging --batteryLevel 100`.
+  ponytail: shoot against a seeded library, not a real one — a session folder is
+  just files (see quill-ios/README.md "Session folder contract"), so three
+  hand-written meta.json + notes.md + transcript.json give a clean, titled,
+  reproducible home screen with no failure banner and no recording needed.
 - `.media/audio/bgm/bgm_00{1,2}.wav` — resolved tracks, with provenance in
   `.media/manifest.jsonl`. `.media/` and `out/` are gitignored.
 - `../site/banner.png` — 1500×500 header banner
