@@ -4,7 +4,10 @@ import SwiftUI
 /// state, and a per-model delete. Switching takes effect on the next
 /// transcription (the queue reloads the pipe lazily).
 struct ModelPicker: View {
-    @AppStorage("quill.model") private var selectedID = "openai_whisper-small"
+    // Default must match ModelCatalog.selectedID's — on a fresh install
+    // nothing has written the key, so a different literal here marked the
+    // wrong radio while the queue downloaded and used the other model.
+    @AppStorage("quill.model") private var selectedID = ModelCatalog.defaultID
     @State private var refresh = 0
 
     var body: some View {

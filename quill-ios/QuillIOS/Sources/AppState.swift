@@ -200,6 +200,12 @@ final class AppState: ObservableObject {
         if !isPaused {
             liveActivity.level(micLevel)
         }
+        // Silent audio loss is the one recording failure the user can't see —
+        // the timer keeps counting either way. Say it while they can still
+        // free space or stop and keep what landed.
+        if session.isFailingToWrite, lastError == nil {
+            lastError = "storage full — audio is no longer being saved"
+        }
     }
 
     private func pipelineChanged(_ status: Transcriber.Status) {
@@ -226,6 +232,19 @@ final class AppState: ObservableObject {
 
     func refreshSessions() {
         sessions = SessionSummary.scan(root: root)
+    }
+
+    /// Re-queue a session whose transcription gave up. `enqueue` clears the
+    /// persisted failure count, so this restores the full set of automatic
+    /// attempts rather than granting exactly one more.
+    func retryTranscription(id: String) {
+        let dir = root.appendingPathComponent(id, isDirectory: true)
+        Task { [transcriber] in
+            await transcriber.enqueue(dir)
+            // enqueue clears the marker; refresh so the row drops its failed
+            // badge even if enqueue bailed and no status callback fires.
+            refreshSessions()
+        }
     }
 
     /// Rename a session — stores the title in meta.json, which
@@ -311,6 +330,10 @@ struct SessionSummary: Identifiable, Equatable {
     let stage: Stage
     /// LLM-generated (or user-set) content title from meta.json, if any.
     let contentTitle: String?
+    /// True when transcription failed enough times that quill stopped
+    /// retrying it automatically. Such a session keeps its audio and stays
+    /// in the list; only `AppState.retryTranscription(id:)` restarts it.
+    var transcriptionGaveUp: Bool = false
 
     /// Content title when we have one; falls back to relative time.
     var title: String { contentTitle ?? timeTitle }
@@ -379,7 +402,9 @@ struct SessionSummary: Identifiable, Equatable {
                     started: started,
                     duration: duration,
                     stage: stage,
-                    contentTitle: contentTitle
+                    contentTitle: contentTitle,
+                    transcriptionGaveUp: stage == .recorded
+                        && Transcriber.failedAttempts(in: dir) >= Transcriber.maxAutoAttempts
                 )
             }
     }

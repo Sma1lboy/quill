@@ -35,12 +35,22 @@ enum ModelCatalog {
     // large-v3 turbo won the 2026-07-29 on-device bake-off (benchmark.md):
     // best zh accuracy + punctuation, and speed is a non-goal for a
     // background queue.
+    /// Single source of truth for the default — ModelPicker's @AppStorage
+    /// must use this same literal or the settings radio marks one model while
+    /// the queue downloads another.
+    static let defaultID = "openai_whisper-large-v3_turbo"
+
     static var selectedID: String {
-        UserDefaults.standard.string(forKey: "quill.model") ?? "openai_whisper-large-v3_turbo"
+        UserDefaults.standard.string(forKey: "quill.model") ?? defaultID
     }
 
     static var selected: Model {
-        models.first { $0.id == selectedID } ?? models[1]
+        // Fall back to the default, not a positional index: models[1] was
+        // "small" while the default is turbo, so an unknown stored ID
+        // silently reported the wrong model.
+        models.first { $0.id == selectedID }
+            ?? models.first { $0.id == defaultID }
+            ?? models[0]
     }
 
     /// WhisperKit's download root (HubApi downloadBase default).

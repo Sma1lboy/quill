@@ -33,9 +33,39 @@ final class MicRecorder: @unchecked Sendable {
     private let levelLock = NSLock()
     private func setLevel(_ v: Float) { levelLock.withLock { _currentLevel = v } }
 
-    static func requestPermission() async -> Bool {
-        await AVAudioApplication.requestRecordPermission()
+    /// Consecutive failed buffer writes. Read from the main thread, written
+    /// from the audio tap, so it shares the level's lock.
+    /// A handful of buffers is ~0.5s of audio — enough to distinguish a
+    /// one-off hiccup from a disk that has stopped accepting writes.
+    static let writeFailureLimit = 8
+    var isFailingToWrite: Bool {
+        levelLock.withLock { _writeFailures >= Self.writeFailureLimit }
     }
+    private var _writeFailures = 0
+    private var writeFailures: Int {
+        get { levelLock.withLock { _writeFailures } }
+        set { levelLock.withLock { _writeFailures = newValue } }
+    }
+
+    static func requestPermission() async -> Bool {
+        #if DEBUG
+        selfCheck()
+        #endif
+        return await AVAudioApplication.requestRecordPermission()
+    }
+
+    #if DEBUG
+    /// The write-failure threshold: a hiccup must stay quiet, a dead disk
+    /// must speak up. Both directions matter — a false alarm mid-meeting is
+    /// as bad as silence.
+    static func selfCheck() {
+        func failing(_ n: Int) -> Bool { n >= writeFailureLimit }
+        assert(!failing(0))
+        assert(!failing(writeFailureLimit - 1))  // transient — stay quiet
+        assert(failing(writeFailureLimit))       // real fault — speak up
+        assert(failing(500))
+    }
+    #endif
 
     func start(writingTo url: URL) throws {
         guard !isRecording else { return }
@@ -92,10 +122,18 @@ final class MicRecorder: @unchecked Sendable {
                 if let data = mono.floatChannelData?[0] {
                     for i in 0..<Int(mono.frameLength) { peak = max(peak, abs(data[i])) }
                 }
-                self.setLevel(peak)
                 try file.write(from: mono)
+                // Level only after a successful write: it drives the live
+                // waveform, and a breathing waveform over a failing write
+                // (disk full) tells the user their meeting is being recorded
+                // when nothing is landing.
+                self.setLevel(peak)
+                self.writeFailures = 0
             } catch {
-                // One bad buffer shouldn't end the session; keep tapping.
+                // One bad buffer shouldn't end the session; keep tapping. A
+                // run of them is a real fault (out of space) — surface it.
+                self.setLevel(0)
+                self.writeFailures += 1
             }
         }
 

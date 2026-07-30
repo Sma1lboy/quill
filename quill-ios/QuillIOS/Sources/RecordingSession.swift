@@ -21,6 +21,9 @@ final class RecordingSession {
 
     var micLevel: Float { mic.currentLevel }
     var isPaused: Bool { mic.isPaused }
+    /// Buffers are being dropped instead of written — effectively always a
+    /// full disk. The take is still running, but audio is being lost.
+    var isFailingToWrite: Bool { mic.isFailingToWrite }
 
     /// Recording time excluding pauses.
     var elapsed: TimeInterval {

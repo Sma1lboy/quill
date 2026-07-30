@@ -427,7 +427,20 @@ struct SessionDetailView: View {
                         if isQueued { BrailleSpinner(size: 10) }
                         Text(statusText)
                             .font(Theme.mono(11, .medium))
-                            .foregroundStyle(Theme.ink)
+                            .foregroundStyle(gaveUp ? Theme.error : Theme.ink)
+                        // Without this the row says "awaiting transcription"
+                        // forever: past the auto-retry cap nothing re-queues
+                        // it, and `retryTranscription` had no caller at all.
+                        if gaveUp {
+                            Button {
+                                state.retryTranscription(id: id)
+                            } label: {
+                                Text("retry")
+                                    .font(Theme.mono(11, .medium))
+                                    .foregroundStyle(Theme.accent)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             } else if session?.stage == .empty {
@@ -446,10 +459,19 @@ struct SessionDetailView: View {
         )
     }
 
+    /// Transcription hit the auto-retry cap: nothing will pick this up again
+    /// without the retry button.
+    private var gaveUp: Bool {
+        !isQueued && Transcriber.failedAttempts(in: dir) >= Transcriber.maxAutoAttempts
+    }
+
     private var statusText: String {
-        guard isQueued else { return "awaiting transcription" }
-        if let p = queueProgress { return "transcribing… \(Int(p * 100))%" }
-        return "transcribing…"
+        if isQueued {
+            if let p = queueProgress { return "transcribing… \(Int(p * 100))%" }
+            return "transcribing…"
+        }
+        // "awaiting" would be a lie once the queue has given up on it.
+        return gaveUp ? "transcription failed" : "awaiting transcription"
     }
 
     private func factLine(_ key: String, _ value: String) -> some View {
