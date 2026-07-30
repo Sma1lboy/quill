@@ -19,6 +19,16 @@ actor TranscriptionCoordinator {
     /// popover can distinguish "failed" from "not started yet".
     static let failureMarker = "transcribe.failed"
 
+    /// Auto-retry ceiling, same value and same meta.json key as the iOS
+    /// sibling (`transcribe_failures`, Transcriber.maxAutoAttempts). A session
+    /// that failed this many times isn't queued at launch any more: the failure
+    /// is usually deterministic (a corrupt model, an unreadable CAF), and
+    /// reloading the model every launch forever produces the same error. The
+    /// count lives in meta.json rather than beside the marker so a session
+    /// carries its attempt history between devices. `enqueue` ignores the cap,
+    /// so the popover's `retry` always works.
+    static let maxAutoAttempts = 3
+
     private var queue: [URL] = []
     /// The job `drain()` is on right now. It's already off `queue`, so without
     /// this a retry clicked mid-transcription passes the dedup check and
@@ -45,6 +55,10 @@ actor TranscriptionCoordinator {
             return
         }
         guard !queue.contains(sessionDir), sessionDir != inFlight else { return }
+        // An explicit enqueue is a user action (stop, or the popover's retry):
+        // clear the counter so a session that hit the cap and is retried by
+        // hand gets a full set of automatic attempts again, rather than one.
+        SessionMeta.clearFailures(in: sessionDir)
         queue.append(sessionDir)
         drainIfIdle()
     }
@@ -68,6 +82,9 @@ actor TranscriptionCoordinator {
                     // a take lands; without this those queue and fail on every
                     // launch once the folders are shared with this app.
                     && ((try? SessionMeta.read(from: $0).tracks.isEmpty) == false)
+                    // Deterministic failures stop costing a model load per
+                    // launch once they've had their attempts (iOS parity).
+                    && SessionMeta.failedAttempts(in: $0) < Self.maxAutoAttempts
             }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         for dir in pending where !queue.contains(dir) {
@@ -103,15 +120,20 @@ actor TranscriptionCoordinator {
             )
             do {
                 try await transcribe(dir)
+                // Succeeded — drop any attempt count from earlier tries so the
+                // session doesn't carry a stale one to the next device.
+                SessionMeta.clearFailures(in: dir)
                 structureNotes(dir)
                 notifyUser(title: "quill — transcript ready", body: dir.lastPathComponent)
                 runHook(for: dir)
             } catch {
-                log(dir, "transcription failed: \(error)")
+                let attempts = SessionMeta.recordFailure(in: dir)
+                log(dir, "transcription failed (attempt \(attempts)/\(Self.maxAutoAttempts)): \(error)")
+                if attempts >= Self.maxAutoAttempts {
+                    log(dir, "giving up automatically — hover the row for retry")
+                }
                 // Marker so the popover can show ERR instead of a row that
-                // looks identical to never-transcribed. resumePending still
-                // re-queues these at launch — the marker is for the UI, not a
-                // tombstone.
+                // looks identical to never-transcribed.
                 try? Data("\(error)\n".utf8).write(
                     to: dir.appendingPathComponent(Self.failureMarker), options: .atomic
                 )
@@ -253,7 +275,7 @@ actor TranscriptionCoordinator {
 
 /// The slice of meta.json the coordinator needs: which files exist, who they
 /// represent, and how far each track started after the earliest one.
-private struct SessionMeta {
+struct SessionMeta {
     struct Track {
         let file: String
         let speaker: String
@@ -270,6 +292,45 @@ private struct SessionMeta {
             case .unreadable(let url): return "can't parse \(url.path)"
             }
         }
+    }
+
+    /// Failed automatic attempts recorded in meta.json — the same key the iOS
+    /// sibling writes, so a session's attempt history survives the trip
+    /// between devices.
+    static func failedAttempts(in dir: URL) -> Int {
+        raw(in: dir)["transcribe_failures"] as? Int ?? 0
+    }
+
+    static func recordFailure(in dir: URL) -> Int {
+        let attempts = failedAttempts(in: dir) + 1
+        patch(in: dir) { $0["transcribe_failures"] = attempts }
+        return attempts
+    }
+
+    /// Only touches meta.json when there's a count to clear — a blind patch
+    /// would create a `{}` meta in a folder that has none.
+    static func clearFailures(in dir: URL) {
+        guard failedAttempts(in: dir) > 0 else { return }
+        patch(in: dir) { $0.removeValue(forKey: "transcribe_failures") }
+    }
+
+    private static func raw(in dir: URL) -> [String: Any] {
+        (try? Data(contentsOf: dir.appendingPathComponent("meta.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            ?? [:]
+    }
+
+    /// Read-merge-write, mirroring iOS's `SessionMeta.patch`: several unrelated
+    /// passes own keys in this one file, so no writer may clobber another's.
+    /// `.atomic` because every downstream reader keys off meta.json.
+    private static func patch(in dir: URL, _ mutate: (inout [String: Any]) -> Void) {
+        var meta = raw(in: dir)
+        guard !meta.isEmpty else { return }  // no meta.json — nothing to annotate
+        mutate(&meta)
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: meta, options: [.prettyPrinted, .sortedKeys]
+        ) else { return }
+        try? data.write(to: dir.appendingPathComponent("meta.json"), options: .atomic)
     }
 
     static func read(from dir: URL) throws -> SessionMeta {
@@ -315,16 +376,24 @@ struct Transcript: Codable {
         return try? JSONDecoder().decode(Transcript.self, from: data)
     }
 
-    /// Write transcript.json and render transcript.md. Both writes are atomic
-    /// (temp file + rename), so a partially written transcript never exists on
-    /// disk — resumePending treats presence of transcript.json as "done".
+    /// Write transcript.md, then transcript.json. Both writes are atomic (temp
+    /// file + rename), so a partially written file never exists on disk — but
+    /// the *order* matters just as much, and it must match the iOS sibling
+    /// (QuillIOS/Sources/Transcription/Transcriber.swift:470).
+    ///
+    /// transcript.json is the queue's done-marker: `resumePending` skips a
+    /// session once it exists. Writing it first meant a kill between the two
+    /// writes left a session that is never re-queued and has no transcript.md
+    /// — and `NotesStructurer` reads transcript.md, so notes.md could never be
+    /// produced for it. md first makes the same kill recoverable: the session
+    /// stays pending and the next launch redoes both.
     func write(to dir: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(self)
-            .write(to: dir.appendingPathComponent("transcript.json"), options: .atomic)
         try Data(rendered(title: dir.lastPathComponent).utf8)
             .write(to: dir.appendingPathComponent("transcript.md"), options: .atomic)
+        try encoder.encode(self)
+            .write(to: dir.appendingPathComponent("transcript.json"), options: .atomic)
     }
 
     private func rendered(title: String) -> String {

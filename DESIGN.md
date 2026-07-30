@@ -41,8 +41,10 @@ Radius: 8pt standard, 6pt small rows, continuous corners always.
   wordmark. System monospaced (SF Mono) on Apple platforms; JetBrains Mono
   stack on web.
 - **System face carries prose**: session titles, transcript text.
-- **Kicker**: uppercase mono 10pt medium, +1.2 tracking, muted —
-  `LOCAL · ON-DEVICE`, `RECENT`.
+- **Kicker**: uppercase mono medium, +1.2 tracking, muted —
+  `LOCAL · ON-DEVICE`, `RECENT`. 10pt in the macOS popover, 11pt on iOS: a
+  292pt popover and a phone canvas don't read the same at one size, and iOS
+  additionally scales from that base for Larger Text (`Theme.scaled`).
 - **Stage tags**: fixed-width mono column (`NOTE` / `TXT` / `AUD`), accent
   when fully processed, muted otherwise. Never icons.
 - Numbers are always `monospacedDigit`.
