@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Allen — software &amp; security engineer</title>
+<meta name="description" content="Allen (ZHallen122) — software engineer, security engineer. Projects, writeups, contact.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=DM+Sans:opsz,wght@9..40,300..700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* Family palette: kobe/codefox/foxychat — warm porcelain paper, espresso
+   ink, terracotta #B0532F..#CC785C as the single brand hue. */
+:root{
+  --paper:oklch(97.8% 0.007 85); --surface:#fff;
+  --ink:oklch(25% 0.02 60); --ink-soft:oklch(35% 0.02 55);
+  --faint:oklch(55% 0.02 60); --line:oklch(88% 0.015 80);
+  --accent:#B0532F; --accent-soft:rgba(176,83,47,.09);
+  --font-display:'Fraunces',Georgia,serif;
+  --font-sans:'DM Sans',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#141413; --surface:#1A1917;
+    --ink:#EAE7DF; --ink-soft:#CFC9BE; --faint:#A9A39A; --line:#3A3835;
+    --accent:#CC785C; --accent-soft:rgba(204,120,92,.14);
+  }
+}
+*{margin:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink-soft);font-family:var(--font-sans);
+  font-weight:380;font-size:15.5px;line-height:1.7;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:radial-gradient(color-mix(in oklab, var(--faint) 28%, transparent) 1px,transparent 1px);
+  background-size:26px 26px}
+main{position:relative;z-index:1;max-width:760px;margin:0 auto;padding:0 24px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.nav{display:flex;align-items:center;gap:6px;padding:26px 0;font-family:var(--font-mono);font-size:13px}
+.nav .bk{color:var(--accent);font-weight:700}
+.nav .name{color:var(--ink);font-weight:700;margin:0 2px}
+.nav .links{margin-left:auto;display:flex;gap:18px}
+.nav .links a{color:var(--ink-soft)}
+.hero{padding:72px 0 48px}
+.kicker{font-family:var(--font-mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+h1{font-family:var(--font-display);font-weight:340;font-size:clamp(40px,7vw,62px);line-height:1.06;
+  letter-spacing:-.02em;color:var(--ink);margin:14px 0 0;font-variation-settings:'SOFT' 30,'WONK' 1}
+h1 em{font-style:italic;color:var(--accent)}
+.hero p{margin-top:20px;max-width:560px;font-size:17px}
+.hero .mono{font-family:var(--font-mono);font-size:13px;color:var(--faint);margin-top:26px}
+section{padding:34px 0}
+h2{font-family:var(--font-mono);font-size:12px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--faint);margin-bottom:18px}
+.cards{display:grid;gap:12px}
+.card{display:block;background:color-mix(in oklab, var(--surface) 72%, transparent);
+  border:1px solid var(--line);border-radius:14px;padding:18px 20px;
+  transition:border-color .15s, transform .15s}
+.card:hover{border-color:var(--accent);text-decoration:none;transform:translateY(-1px)}
+.card .t{display:flex;align-items:baseline;gap:10px}
+.card .t b{color:var(--ink);font-size:15.5px;font-weight:600}
+.card .t .lang{font-family:var(--font-mono);font-size:11px;color:var(--accent)}
+.card p{font-size:13.5px;color:var(--ink-soft);margin-top:5px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:640px){.two{grid-template-columns:1fr}}
+.foot{border-top:1px solid var(--line);margin-top:40px;padding:28px 0 56px;
+  font-family:var(--font-mono);font-size:12px;color:var(--faint);
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.chip{display:inline-block;font-family:var(--font-mono);font-size:11.5px;color:var(--accent);
+  background:var(--accent-soft);border-radius:999px;padding:4px 12px;margin:3px 4px 0 0}
+</style>
+</head>
+<body>
+<main>
+  <nav class="nav">
+    <span class="bk">[</span><span class="name">allen</span><span class="bk">]</span>
+    <div class="links">
+      <a href="https://github.com/ZHallen122">github</a>
+      <a href="#projects">projects</a>
+      <a href="#security">security</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="kicker">software engineer · security engineer</div>
+    <h1>I build software,<br>then I <em>break</em> it.</h1>
+    <p>Allen — engineer working across app development and security.
+    Ships native macOS/iOS tools, TypeScript infrastructure, and spends the
+    rest of the time in CTFs and vulnerability writeups.</p>
+    <div class="mono">currently: release engineering on <a href="https://github.com/Sma1lboy/quill">[ quill ]</a> — local-first voice notes</div>
+    <div style="margin-top:18px">
+      <span class="chip">swift</span><span class="chip">typescript</span><span class="chip">python</span><span class="chip">security research</span><span class="chip">CTF</span>
+    </div>
+  </header>
+
+  <section id="projects">
+    <h2>projects</h2>
+    <div class="cards">
+      <a class="card" href="https://github.com/ZHallen122/Bouncer">
+        <div class="t"><b>Bouncer</b><span class="lang">swift</span></div>
+        <p>Native macOS menu-bar app that monitors app memory anomalies and swap pressure — local baselines, actionable alerts.</p>
+      </a>
+      <a class="card" href="https://github.com/Sma1lboy/quill">
+        <div class="t"><b>quill</b><span class="lang">swift · release</span></div>
+        <p>Local-first voice notes for iPhone: record → transcribe → structured notes, all on-device. Running the release pipeline.</p>
+      </a>
+      <div class="two">
+        <a class="card" href="https://github.com/ZHallen122/pochi-web-fetch-mcp-server">
+          <div class="t"><b>web-fetch MCP server</b><span class="lang">typescript</span></div>
+          <p>MCP server for structured web fetching in agent pipelines.</p>
+        </a>
+        <a class="card" href="https://github.com/ZHallen122/Claude-code-history-To-Ai-SDK-Parser">
+          <div class="t"><b>claude-history parser</b><span class="lang">typescript</span></div>
+          <p>Converts Claude Code session history into AI-SDK message format.</p>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section id="security">
+    <h2>security</h2>
+    <div class="cards">
+      <div class="two">
+        <a class="card" href="https://github.com/ZHallen122/CTF-Practice-WriteUp">
+          <div class="t"><b>CTF writeups</b><span class="lang">practice</span></div>
+          <p>Ongoing capture-the-flag practice notes and solutions.</p>
+        </a>
+        <a class="card" href="https://github.com/ZHallen122/SecureCode1-write-up">
+          <div class="t"><b>SecureCode writeup</b><span class="lang">python</span></div>
+          <p>Secure-coding challenge analysis and exploit walkthroughs.</p>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>© 2026 allen · zhallen122</span>
+    <span>built with the [ kobe ] design language</span>
+  </footer>
+</main>
+</body>
+</html>
