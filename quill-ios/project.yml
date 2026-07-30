@@ -84,6 +84,12 @@ targets:
       path: QuillWidgets/Info.plist
       properties:
         CFBundleDisplayName: quill
+        # Must match the app target's, or the build warns and an App Store
+        # submission is rejected outright by ITMS validation. The plist is
+        # generated from here, so keeping the two literals together is the
+        # only place they can be kept in sync.
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "18174101"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:

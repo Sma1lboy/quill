@@ -12,7 +12,8 @@ mono kickers, bracket-chip wordmark). macOS sibling: `../quill-app`.
 ## Build & deploy
 
 ```sh
-/tmp/xcodegen/xcodegen/bin/xcodegen generate   # or any xcodegen ≥ 2.35
+brew install xcodegen && xcodegen generate      # ≥ 2.35; regenerate after
+                                                # adding or removing sources
 xcodebuild -project QuillIOS.xcodeproj -scheme QuillIOS \
   -destination "platform=iOS,id=<device-udid>" -allowProvisioningUpdates build
 xcrun devicectl device install app --device <device-udid> <path-to-quill.app>
