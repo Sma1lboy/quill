@@ -260,3 +260,24 @@ final class ScreenshotDriver: XCTestCase {
         sleep(25)
     }
 }
+
+final class ScreenshotDriver2: XCTestCase {
+    @MainActor
+    func testHoldTranscriptOpen() throws {
+        let app = XCUIApplication()
+        app.launch()
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS 'nvidia'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 8))
+        row.tap()
+        sleep(1)
+        // expand the TRANSCRIPT disclosure then scroll it into view
+        let disclosure = app.staticTexts["TRANSCRIPT"].firstMatch
+        if disclosure.waitForExistence(timeout: 4) {
+            app.swipeUp()
+            disclosure.tap()
+            sleep(1)
+            app.swipeUp()
+        }
+        sleep(22)
+    }
+}

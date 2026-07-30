@@ -1,3 +1,5 @@
+<img src="site/banner.png" alt="[ quill ] — local-first voice notes" width="100%">
+
 # [ quill ]
 
 Local-first voice notes for Apple platforms. Record → transcribe →
@@ -29,19 +31,23 @@ no subscription — every session is a folder you own in Files.
 ## Reference
 
 quill is a direct extension of — and entirely inspired by —
-[digimata/quill](https://github.com/digimata/quill), the minimal macOS
-meeting recorder (vendored under `ref/quill`). The audio capture core,
-session-folder contract, and "folders you own" philosophy come straight
-from it. [kylelegare/tape](https://github.com/kylelegare/tape) informed
-the app-bundle packaging, and the visual language is inherited from
-[kobe](https://github.com/Sma1lboy/kobe). Thanks to all three.
+[digimata/quill](https://github.com/digimata/quill) by
+[@dremnik](https://x.com/dremnik), the minimal macOS meeting recorder.
+The audio capture core, session-folder contract, and "folders you own"
+philosophy come straight from it. The visual language is inherited from
+[kobe](https://github.com/Sma1lboy/kobe).
 
 ## Screenshots
 
 <p>
-  <img src="quill-ios/screenshots/home-light.png" width="230">
-  <img src="quill-ios/screenshots/detail-light.png" width="230">
-  <img src="quill-ios/screenshots/home-dark.png" width="230">
+  <img src="site/framed/home-light-framed.png" width="230">
+  <img src="site/framed/detail-light-framed.png" width="230">
+  <img src="site/framed/transcript-light-framed.png" width="230">
+</p>
+<p>
+  <img src="site/framed/settings-light-framed.png" width="230">
+  <img src="site/framed/home-dark-framed.png" width="230">
+  <img src="site/framed/detail-dark-framed.png" width="230">
 </p>
 
 ## Roadmap
