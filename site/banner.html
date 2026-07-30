@@ -1,0 +1,89 @@
+<!doctype html>
+<!-- quill banner — kobe grammar: porcelain paper, Fraunces display,
+     JetBrains Mono chrome, terracotta accent. 1500×500 (X header / GitHub
+     social size). Screenshot with a browser at that viewport. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper: oklch(97.8% 0.007 85);
+  --ink: oklch(25% 0.02 60);
+  --ink-soft: oklch(35% 0.02 55);
+  --faint: oklch(55% 0.02 60);
+  --line: oklch(88% 0.015 80);
+  --accent: oklch(62% 0.13 45);
+  --accent-2: oklch(70% 0.11 50);
+}
+*{margin:0;box-sizing:border-box}
+body{width:1500px;height:500px;background:var(--paper);overflow:hidden;
+  font-family:'JetBrains Mono',monospace;position:relative}
+/* faint dotted field, kobe's lunar-ground texture */
+body::before{content:"";position:absolute;inset:0;
+  background-image:radial-gradient(oklch(80% 0.02 70/.5) 1px, transparent 1px);
+  background-size:26px 26px}
+/* soft terracotta glow bottom-right */
+body::after{content:"";position:absolute;right:-180px;bottom:-260px;width:760px;height:640px;
+  background:radial-gradient(closest-side, oklch(70% 0.11 50/.22), transparent 70%)}
+.wrap{position:relative;z-index:2;height:100%;display:flex;align-items:center;
+  padding:0 110px;gap:80px}
+.left{flex:1}
+.kicker{font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-bottom:22px}
+h1{font-family:'Fraunces',Georgia,serif;font-weight:350;font-size:96px;line-height:1.0;
+  letter-spacing:-.02em;color:var(--ink);font-variation-settings:'SOFT' 30,'WONK' 1}
+h1 .bracket{color:var(--accent);font-family:'JetBrains Mono',monospace;font-weight:700;font-size:82px}
+.sub{margin-top:26px;font-size:21px;color:var(--ink-soft);line-height:1.55;max-width:640px;
+  font-family:'JetBrains Mono',monospace}
+.sub b{color:var(--accent);font-weight:700}
+.chips{margin-top:30px;display:flex;gap:12px}
+.chip{border:1.5px solid var(--line);background:oklch(100% 0 0/.6);border-radius:999px;
+  padding:9px 20px;font-size:15.5px;color:var(--ink-soft)}
+.chip.hot{border-color:var(--accent);color:var(--accent)}
+/* right: terminal-ish session card */
+.card{width:430px;background:oklch(100% 0 0/.82);border:1.5px solid var(--line);
+  border-radius:18px;padding:26px 28px;box-shadow:0 24px 70px oklch(40% 0.04 60/.16)}
+.card .bar{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.dot{width:13px;height:13px;border-radius:50%;background:var(--accent)}
+.card .time{margin-left:auto;font-size:20px;font-weight:700;color:var(--ink)}
+.wave{display:flex;gap:5px;align-items:center;height:26px}
+.wave i{width:4px;border-radius:3px;background:var(--accent);display:block}
+.row{display:flex;gap:10px;margin-top:14px;font-size:14.5px;color:var(--ink-soft);align-items:baseline}
+.tag{color:var(--accent);font-weight:700;font-size:12px;letter-spacing:.06em;min-width:38px}
+.row .txt{line-height:1.45}
+.done{margin-top:18px;padding-top:14px;border-top:1px dashed var(--line);
+  font-size:13.5px;color:var(--faint);display:flex;justify-content:space-between}
+.done b{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="left">
+    <div class="kicker">local-first voice notes · ios + macos</div>
+    <h1><span class="bracket">[</span> quill <span class="bracket">]</span></h1>
+    <div class="sub">record → transcribe → <b>structured notes</b>, entirely on your device. no account, no cloud — your recordings are folders you own.</div>
+    <div class="chips">
+      <span class="chip hot">apple intelligence</span>
+      <span class="chip">whisper on-device</span>
+      <span class="chip">100 languages</span>
+      <span class="chip">speaker split</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="bar">
+      <span class="dot"></span>
+      <div class="wave">
+        <i style="height:8px"></i><i style="height:18px"></i><i style="height:24px"></i>
+        <i style="height:14px"></i><i style="height:20px"></i><i style="height:9px"></i>
+        <i style="height:16px"></i>
+      </div>
+      <span class="time">12:34</span>
+    </div>
+    <div class="row"><span class="tag">S1</span><span class="txt">Welcome to Startup School — thank you for being here, Jensen.</span></div>
+    <div class="row"><span class="tag">S2</span><span class="txt">I'm delighted to do it. It's great to be here.</span></div>
+    <div class="done"><span>NOTE · nvidia's unexpected path to success</span><b>✓ on-device</b></div>
+  </div>
+</div>
+</body>
+</html>
