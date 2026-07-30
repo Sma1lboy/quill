@@ -6,38 +6,91 @@
 <title>[ quill ] — local-first voice notes for iPhone</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23C46B48" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/></svg>'>
 <meta name="description" content="Record → transcribe → structured notes, entirely on your device. No cloud, no account, no subscription.">
+<meta name="theme-color" content="#F6F3EC" media="(prefers-color-scheme:light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme:dark)">
+<!-- social card. ponytail: og:image points at the repo's committed banner on raw.githubusercontent
+     because this page inlines every asset as base64 — it has zero relative refs, so nothing here
+     proves site/banner.png is actually served at the site root. raw works whichever way it deploys.
+     If quill.sma1lboy.me does serve the site/ directory, swap to https://quill.sma1lboy.me/banner.png
+     (canonical, same-origin, no third-party dep). banner.png is 1500x500 = 3:1, so twitter's
+     1.91:1 large card center-crops the sides; a purpose-built 1200x630 is the upgrade. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="[ quill ]">
+<meta property="og:url" content="https://quill.sma1lboy.me/">
+<meta property="og:title" content="[ quill ] — local-first voice notes for iPhone">
+<meta property="og:description" content="Record → transcribe → structured notes, entirely on your device. No cloud, no account, no subscription.">
+<meta property="og:image" content="https://raw.githubusercontent.com/Sma1lboy/quill/main/site/banner.png">
+<meta property="og:image:width" content="1500">
+<meta property="og:image:height" content="500">
+<meta property="og:image:alt" content="[ quill ] wordmark beside a transcript with speaker-split lines and a structured note.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://quill.sma1lboy.me/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=DM+Sans:opsz,wght@9..40,300..700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 <style>
 :root{
-  --paper:oklch(97.8% 0.007 85); --surface:#fff;
+  --paper:oklch(97.8% 0.007 85); --surface:oklch(100% 0 0/.68);
   --ink:oklch(25% 0.02 60); --ink-soft:oklch(35% 0.02 55);
   --faint:oklch(55% 0.02 60); --line:oklch(88% 0.015 80);
   --accent:oklch(62% 0.13 45); --accent-deep:#B0532F;
   --accent-wash:oklch(62% 0.13 45/.1); --accent-line:oklch(62% 0.13 45/.4);
+  /* ponytail: the 5 near-white card/pill fills (.6/.7/.72) collapse to one --surface —
+     visually indistinguishable, and it's what makes dark mode a token swap instead of a rewrite.
+     --surface-hi is the navbar's brighter border/hover pair (.8/.9). */
+  --surface-hi:oklch(100% 0 0/.88);
+  --dots:oklch(80% 0.02 70/.45); --shadow:oklch(40% 0.04 60/.16);
+  --code-bg:oklch(25% 0.02 60); --code-fg:oklch(92% 0.01 85); --code-c:oklch(65% 0.05 60);
+  --art-blend:multiply; --art-opacity:.95; --sprite-blend:multiply; --sprite-opacity:.85;
   --font-display:'Fraunces',Georgia,serif;
   --font-sans:'DM Sans',system-ui,sans-serif;
   --font-mono:'JetBrains Mono',ui-monospace,monospace;
 }
+/* dark — exact DESIGN.md Claude-port column. Art switches off multiply: multiplying a
+   cream-ground plate against #141413 renders it to near-black, so the statue/sprites go
+   normal-blend at reduced opacity instead (palette untouched, per DESIGN.md). */
+@media(prefers-color-scheme:dark){:root{
+  --paper:#141413; --surface:#1A1917;
+  /* ink/faint/line/paper/surface/accent are verbatim DESIGN.md. --ink-soft is this page's
+     third text tier, which DESIGN.md doesn't define (it has ink + muted only) — interpolated
+     between them on the same hue so body prose still sits below the display headings. */
+  --ink:#EAE7DF; --ink-soft:#D6D2C9;
+  --faint:#A9A39A; --line:#3A3835;
+  --accent:#CC785C; --accent-deep:#CC785C;
+  --accent-wash:rgb(204 120 92/.14); --accent-line:rgb(204 120 92/.5);
+  --surface-hi:#2B2A27;
+  --dots:oklch(70% 0.02 70/.14); --shadow:oklch(0% 0 0/.5);
+  --code-bg:#2B2A27; --code-fg:#EAE7DF; --code-c:#A9A39A;
+  --art-blend:normal; --art-opacity:.34; --sprite-blend:normal; --sprite-opacity:.5;
+}}
 *{margin:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{background:var(--paper);color:var(--ink-soft);font-family:var(--font-sans);font-weight:380;
   font-size:15.5px;line-height:1.7;-webkit-font-smoothing:antialiased;overflow-x:clip}
 body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
-  background-image:radial-gradient(oklch(80% 0.02 70/.45) 1px,transparent 1px);background-size:26px 26px}
+  background-image:radial-gradient(var(--dots) 1px,transparent 1px);background-size:26px 26px}
 a{color:var(--accent-deep);text-decoration:none}
 /* floating pill navbar — the kobe-landing signature */
 .navbar{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:50;display:flex;align-items:center;
-  gap:2px;padding:6px 8px;border-radius:999px;background:oklch(100% 0 0/.6);backdrop-filter:blur(16px) saturate(1.3);
-  border:1px solid oklch(100% 0 0/.8);box-shadow:0 10px 36px oklch(40% 0.04 60/.16);
+  gap:2px;padding:6px 8px;border-radius:999px;background:var(--surface);backdrop-filter:blur(16px) saturate(1.3);
+  border:1px solid var(--surface-hi);box-shadow:0 10px 36px var(--shadow);
   font-family:var(--font-mono);font-size:12.5px;max-width:calc(100vw - 24px)}
 .navbar .bk{color:var(--accent-deep);font-weight:700;padding-left:8px}
 .navbar .bin{font-weight:700;color:var(--ink);padding:8px 4px}
 .navbar .caret{display:inline-block;width:7px;height:14px;background:var(--accent-deep);margin:0 6px 0 2px;
   animation:blink 1.1s steps(1) infinite;vertical-align:-2px}
 @keyframes blink{50%{opacity:0}}
+/* DESIGN.md: Reduce Motion → 150ms ease-out fades, nothing that loops or travels.
+   The caret stops blinking (it's the only infinite animation), smooth scroll becomes
+   an instant jump, and hover/press transitions keep their fade but drop the transform. */
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .navbar .caret{animation:none}
+  *,*::before,*::after{transition-duration:.15s!important;transition-timing-function:ease-out!important;
+    animation-duration:.01ms!important;animation-iteration-count:1!important}
+  .card:hover{transform:none!important}
+}
 .navbar a{color:var(--ink-soft);padding:8px 12px;border-radius:999px;transition:background .14s,color .14s;white-space:nowrap}
-.navbar a:hover{background:oklch(100% 0 0/.9);color:var(--ink)}
+.navbar a:hover{background:var(--surface-hi);color:var(--ink)}
 .navbar a.gh{background:var(--ink);color:var(--paper);margin-left:4px}
 main{position:relative;z-index:1}
 .wrap{max-width:1100px;margin:0 auto;padding:0 24px}
@@ -45,7 +98,7 @@ main{position:relative;z-index:1}
 .hero{position:relative;padding:150px 0 90px;overflow:visible;text-align:left}
 .hero-bg{position:absolute;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
 .hero-bg img{position:absolute;right:0;top:0;height:112%;min-width:100%;object-fit:cover;object-position:center right;
-  mix-blend-mode:multiply;opacity:.95;
+  mix-blend-mode:var(--art-blend);opacity:var(--art-opacity);
   -webkit-mask-image:linear-gradient(to bottom, black 45%, rgba(0,0,0,.55) 68%, transparent 88%);
   mask-image:linear-gradient(to bottom, black 45%, rgba(0,0,0,.55) 68%, transparent 88%)}
 .kicker{font-family:var(--font-mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
@@ -57,7 +110,7 @@ h1 em{font-style:italic;color:var(--accent-deep)}
 .cta{margin-top:32px;display:flex;gap:12px;font-family:var(--font-mono);font-size:13.5px;flex-wrap:wrap}
 .cta a{padding:13px 24px;border-radius:999px}
 .cta .primary{background:var(--ink);color:var(--paper)}
-.cta .ghost{border:1.5px solid var(--line);color:var(--ink-soft);background:oklch(100% 0 0/.6)}
+.cta .ghost{border:1.5px solid var(--line);color:var(--ink-soft);background:var(--surface)}
 .trust{margin-top:22px;font-family:var(--font-mono);font-size:12px;color:var(--faint)}
 @media(max-width:900px){.hero{text-align:center;padding-top:120px}
   .hero-bg{opacity:.35}.hero h1,.hero .sub{margin-left:auto;margin-right:auto}
@@ -71,7 +124,7 @@ h1 em{font-style:italic;color:var(--accent-deep)}
 /* pipeline strip */
 .pipe{display:flex;justify-content:center;gap:14px;align-items:center;padding:36px 0 10px;
   font-family:var(--font-mono);font-size:14px;color:var(--ink-soft);flex-wrap:wrap}
-.pipe .step{background:oklch(100% 0 0/.7);border:1.5px solid var(--line);border-radius:999px;padding:10px 22px}
+.pipe .step{background:var(--surface);border:1.5px solid var(--line);border-radius:999px;padding:10px 22px}
 .pipe .step.hot{border-color:var(--accent-line);color:var(--accent-deep);font-weight:700}
 .pipe .arr{color:var(--faint)}
 /* features */
@@ -80,7 +133,7 @@ h2{font-family:var(--font-display);font-weight:350;font-size:clamp(30px,4.5vw,44
   letter-spacing:-.02em;text-align:center;margin-bottom:12px}
 .lede{text-align:center;color:var(--faint);max-width:560px;margin:0 auto 44px;font-size:16px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
-.card{background:oklch(100% 0 0/.72);border:1px solid var(--line);border-radius:16px;padding:24px 26px;
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px 26px;
   transition:border-color .15s,transform .15s}
 .card:hover{border-color:var(--accent-line);transform:translateY(-2px)}
 .card h3{font-family:var(--font-mono);font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;
@@ -96,15 +149,15 @@ h2{font-family:var(--font-display);font-weight:350;font-size:clamp(30px,4.5vw,44
 .row .txt .mono{font-family:var(--font-mono);font-size:12.5px;color:var(--faint);margin-top:14px}
 @media(max-width:820px){.row,.row.flip{flex-direction:column;gap:28px;text-align:center}.row .txt p{margin:0 auto}}
 /* install */
-.install{background:oklch(100% 0 0/.6);border:1px solid var(--line);border-radius:20px;padding:40px 44px;max-width:760px;margin:0 auto}
+.install{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:40px 44px;max-width:760px;margin:0 auto}
 .install h3{font-family:var(--font-display);font-size:26px;font-weight:380;color:var(--ink);margin-bottom:8px}
 .install p{font-size:14.5px;margin-bottom:18px}
-.install pre{background:var(--ink);color:oklch(92% 0.01 85);border-radius:12px;padding:18px 22px;
+.install pre{background:var(--code-bg);color:var(--code-fg);border-radius:12px;padding:18px 22px;
   font-family:var(--font-mono);font-size:13px;line-height:1.8;overflow-x:auto}
-.install pre .c{color:oklch(65% 0.05 60)}
+.install pre .c{color:var(--code-c)}
 .install .note{font-family:var(--font-mono);font-size:12px;color:var(--faint);margin-top:14px;margin-bottom:0}
 
-.sprite{position:absolute;mix-blend-mode:multiply;opacity:.85;pointer-events:none;z-index:0}
+.sprite{position:absolute;mix-blend-mode:var(--sprite-blend);opacity:var(--sprite-opacity);pointer-events:none;z-index:0}
 .sp-feather{width:84px;left:4%;top:-6px;transform:rotate(-10deg)}
 .sp-wave{width:74px;right:6%;top:-24px}
 .sp-folder{width:78px;right:8%;bottom:-18px;transform:rotate(6deg)}
