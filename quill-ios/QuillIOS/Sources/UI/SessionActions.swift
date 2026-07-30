@@ -89,6 +89,25 @@ extension SessionActions {
         FoundationModelsEnhance.saveTitle("", in: session, overwrite: true)
         assert(storedTitle() == nil, "empty title did not fall back to the timestamp")
 
+        // Auto-title scrubbing: what models actually hand back.
+        func clean(_ s: String) -> String { FoundationModelsEnhance.clean(s) }
+        assert(clean("\"weekly planning · pricing\"") == "weekly planning · pricing", "quotes survived")
+        assert(clean("Title: deposit dispute") == "deposit dispute", "label survived")
+        assert(clean("landlord call.") == "landlord call", "trailing period survived")
+        assert(clean("标题：租金谈判") == "租金谈判", "zh label survived")
+        assert(clean("「季度回顾」") == "季度回顾", "cjk quotes survived")
+        // A chatty model: explanation on line two, title on line one.
+        assert(clean("pricing review\n\nThis title reflects…") == "pricing review", "took more than line one")
+        // Length: truncate, never reject (the old guard dropped these).
+        let long = clean(String(repeating: "alpha ", count: 20))
+        assert(!long.isEmpty, "long title was rejected instead of truncated")
+        assert(long.count <= 48, "truncation exceeded budget: \(long.count)")
+        assert(!long.hasSuffix(" "), "truncation left trailing space")
+        // CJK has no spaces to cut on — must still land inside budget.
+        let cjk = clean(String(repeating: "汉", count: 80))
+        assert(cjk.count == 48, "cjk truncation missed budget: \(cjk.count)")
+        assert(clean("   \n  ").isEmpty, "whitespace-only title should clear")
+
         guard let archive = try? zip(session) else {
             assertionFailure("zip(_:) threw on a normal session folder")
             return

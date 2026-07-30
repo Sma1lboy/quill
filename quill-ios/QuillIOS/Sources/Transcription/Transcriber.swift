@@ -33,6 +33,7 @@ actor Transcriber {
         guard FileManager.default.fileExists(
             atPath: sessionDir.appendingPathComponent("mic.caf").path
         ) else { return }
+        guard !queue.contains(sessionDir) else { return }
         queue.append(sessionDir)
         drainIfIdle()
     }
@@ -42,10 +43,12 @@ actor Transcriber {
         guard let entries = try? fm.contentsOfDirectory(
             at: root, includingPropertiesForKeys: nil
         ) else { return }
+        // Audio is the only requirement: a take killed (or jetsammed) before
+        // stop() has mic.caf but no meta.json, and demanding meta.json here
+        // meant that recording was never transcribed at all.
         let pending = entries
             .filter {
-                fm.fileExists(atPath: $0.appendingPathComponent("meta.json").path)
-                    && fm.fileExists(atPath: $0.appendingPathComponent("mic.caf").path)
+                fm.fileExists(atPath: $0.appendingPathComponent("mic.caf").path)
                     && !fm.fileExists(atPath: $0.appendingPathComponent("transcript.json").path)
             }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
@@ -315,16 +318,22 @@ actor Transcriber {
     /// button in the session screen). Best-effort — a failure never costs
     /// the transcript.
     private func enhanceWithFallback(_ dir: URL) async {
-        guard !FileManager.default.fileExists(
-            atPath: dir.appendingPathComponent("notes.md").path
-        ) else { return }
+        let notes = dir.appendingPathComponent("notes.md")
+        guard !FileManager.default.fileExists(atPath: notes.path) else { return }
 
         let fm = FoundationModelsEnhance()
         if fm.isAvailable {
             do {
                 try await fm.enhance(session: dir)
-                log(dir, "notes.md written (foundation-models)")
-                return
+                // enhance() returns successfully without writing anything on
+                // an empty transcript or an empty model response — check the
+                // file rather than trusting the absence of a throw, or we log
+                // a lie and skip the llama fallback.
+                if FileManager.default.fileExists(atPath: notes.path) {
+                    log(dir, "notes.md written (foundation-models)")
+                    return
+                }
+                log(dir, "foundation-models produced no notes")
             } catch {
                 log(dir, "foundation-models enhance failed: \(error)")
             }
@@ -385,10 +394,15 @@ struct Transcript: Codable {
     func write(to dir: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(self)
-            .write(to: dir.appendingPathComponent("transcript.json"), options: .atomic)
+        // transcript.json is the queue's "done" marker (resumePending skips a
+        // session once it exists), so it must be written LAST. The other way
+        // round, a kill between the two writes left a session that is never
+        // re-queued but has no transcript.md — and the enhance pass reads
+        // transcript.md, so notes could never be produced for it.
         try Data(rendered(title: dir.lastPathComponent).utf8)
             .write(to: dir.appendingPathComponent("transcript.md"), options: .atomic)
+        try encoder.encode(self)
+            .write(to: dir.appendingPathComponent("transcript.json"), options: .atomic)
     }
 
     static func read(from dir: URL) -> Transcript? {

@@ -80,6 +80,11 @@ final class RecordingSession {
 
     func start() throws {
         try mic.start(writingTo: dir.appendingPathComponent("mic.caf"))
+        // Stub meta immediately: everything downstream (the session list and
+        // the transcription queue) keys off meta.json, so a take killed or
+        // jetsammed before stop() used to leave audio that never appeared and
+        // never transcribed. stop() overwrites this with the final numbers.
+        writeMeta(ended: nil)
     }
 
     func pause() {
@@ -101,22 +106,56 @@ final class RecordingSession {
             pausedAt = nil
         }
         mic.stop()
+        writeMeta(ended: Date())
+    }
 
-        let ended = Date()
+    /// Write meta.json. `ended: nil` is the in-progress stub written at
+    /// start; stop() rewrites it with the final duration.
+    private func writeMeta(ended: Date?) {
         let iso = ISO8601DateFormatter()
-        let meta: [String: Any] = [
-            "kind": kind,
-            "started": iso.string(from: startedAt),
-            "ended": iso.string(from: ended),
-            "duration_seconds": Int(elapsed),
-            "files": ["mic": "mic.caf"],
-            "start_offset_ms": ["mic": 0],
-        ]
-        if let data = try? JSONSerialization.data(
-            withJSONObject: meta,
-            options: [.prettyPrinted, .sortedKeys]
-        ) {
-            try? data.write(to: dir.appendingPathComponent("meta.json"))
+        SessionMeta.patch(in: dir) { meta in
+            meta["kind"] = kind
+            meta["started"] = iso.string(from: startedAt)
+            meta["files"] = ["mic": "mic.caf"]
+            meta["start_offset_ms"] = ["mic": 0]
+            if let ended {
+                meta["ended"] = iso.string(from: ended)
+                meta["duration_seconds"] = Int(elapsed)
+            }
         }
+    }
+}
+
+/// meta.json is the one mutable per-session record, written by several
+/// unrelated passes (recording, the title from enhance, transcription
+/// failures). They all need read-merge-write so none clobbers another's
+/// keys, and `.atomic` so a crash mid-write can't truncate the file that
+/// every downstream reader keys off.
+enum SessionMeta {
+    static func read(in dir: URL) -> [String: Any] {
+        (try? Data(contentsOf: dir.appendingPathComponent("meta.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            ?? [:]
+    }
+
+    static func patch(in dir: URL, _ mutate: (inout [String: Any]) -> Void) {
+        var meta = read(in: dir)
+        #if DEBUG
+        let titleBefore = meta["title"] as? String
+        #endif
+        mutate(&meta)
+        #if DEBUG
+        // Every pass merges into the same file; dropping a key another pass
+        // owns (the generated title is the one users would notice) is the
+        // failure mode this helper exists to prevent.
+        assert(
+            titleBefore == nil || meta["title"] as? String == titleBefore,
+            "SessionMeta.patch dropped an existing title"
+        )
+        #endif
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: meta, options: [.prettyPrinted, .sortedKeys]
+        ) else { return }
+        try? data.write(to: dir.appendingPathComponent("meta.json"), options: .atomic)
     }
 }

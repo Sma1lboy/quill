@@ -30,6 +30,11 @@ final class AppState: ObservableObject {
     @Published var lastError: String?
 
     private let transcriber = Transcriber()
+    /// Set synchronously when a start is requested. `isRecording` only flips
+    /// after the permission `await`, so two taps inside that window both
+    /// passed `guard !isRecording` and started two recorders — for a note
+    /// that meant two writers truncating the same mic.caf.
+    private var starting = false
     private let liveActivity = RecordingActivityController()
     private var session: RecordingSession?
     private var ticker: Timer?
@@ -81,7 +86,9 @@ final class AppState: ObservableObject {
     }
 
     private func startQuickTake() async {
-        guard !isRecording else { return }
+        guard !isRecording, !starting else { return }
+        starting = true
+        defer { starting = false }
         guard await MicRecorder.requestPermission() else {
             lastError = "microphone permission denied — enable it in Settings"
             return
@@ -112,8 +119,10 @@ final class AppState: ObservableObject {
 
     /// Start (or restart) recording inside an existing note folder.
     func startNoteRecording(id: String) {
-        guard !isRecording else { return }
+        guard !isRecording, !starting else { return }
+        starting = true
         Task {
+            defer { starting = false }
             guard await MicRecorder.requestPermission() else {
                 lastError = "microphone permission denied — enable it in Settings"
                 return
