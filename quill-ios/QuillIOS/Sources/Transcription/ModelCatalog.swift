@@ -7,27 +7,40 @@ enum ModelCatalog {
     struct Model: Identifiable, Equatable {
         let id: String        // WhisperKit variant name
         let label: String
-        let size: String
+        /// Total download, bytes. One source — the display string is derived,
+        /// so a size shown to the user can't drift from the one we check
+        /// free space against.
+        let bytes: Int64
         let description: String
+
+        /// "1.5 GB" — decimal units, matching how iOS reports storage.
+        var size: String {
+            ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        }
     }
 
+    // Byte counts measured from the HuggingFace API file list for
+    // argmaxinc/whisperkit-coreml on 2026-07-30 (sum of every file in the
+    // variant folder — WhisperKit downloads all of them). Cross-checked
+    // against the copy on disk: `small` matched to the byte.
+    // Exact, not approximate. Re-measure if the repo republishes weights.
     static let models: [Model] = [
         Model(
             id: "openai_whisper-base",
             label: "base",
-            size: "~150 MB",
+            bytes: 146_719_453,
             description: "fastest · fine for clear speech in quiet rooms, weakest on Chinese and accents"
         ),
         Model(
             id: "openai_whisper-small",
             label: "small",
-            size: "~600 MB",
+            bytes: 486_487_465,
             description: "fast · good speed/accuracy balance when storage is tight"
         ),
         Model(
             id: "openai_whisper-large-v3_turbo",
             label: "large-v3 turbo",
-            size: "~1.6 GB",
+            bytes: 3_195_115_988,
             description: "default · most accurate (won the on-device bake-off), ~3s per 8s of audio"
         ),
     ]
@@ -88,4 +101,76 @@ enum ModelCatalog {
     static func delete(_ id: String) {
         try? FileManager.default.removeItem(at: folder(for: id))
     }
+
+    // MARK: - Storage
+
+    /// `ByteCountFormatter` in quill's voice: it renders 0 as "Zero KB",
+    /// which is both capitalized and not how anyone says it. Units stay
+    /// uppercase — "GB" is a unit, not prose.
+    static func bytesLabel(_ bytes: Int64) -> String {
+        bytes <= 0 ? "0 MB" : ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    /// Free space iOS will actually give us, in bytes. `ImportantUsage`
+    /// counts purgeable space (caches the system can evict), so it's the
+    /// honest number for "can this download land" — the plain free-space key
+    /// under-reports and would refuse downloads that would have worked.
+    static func freeBytes() -> Int64 {
+        #if DEBUG
+        selfCheck()  // reached from both the picker and the download path
+        #endif
+        return (try? modelsRoot.resourceValues(
+            forKeys: [.volumeAvailableCapacityForImportantUsageKey]
+        ).volumeAvailableCapacityForImportantUsage)
+            // Documents dir always resolves; treat an unreadable volume as
+            // "don't block the user" rather than inventing a refusal.
+            ?? .max
+    }
+
+    /// Why a download can't start, in quill's voice — or nil when it can.
+    /// Both figures, so the number isn't a mystery.
+    static func downloadBlocker(for model: Model, free: Int64 = freeBytes()) -> String? {
+        // Already on disk — nothing to download, so nothing to refuse.
+        guard !isDownloaded(model.id) else { return nil }
+        return shortfall(need: model.bytes, free: free)
+    }
+
+    /// The comparison itself, with no filesystem in it — so the self-check
+    /// means the same thing on a device that already has the weights.
+    static func shortfall(need: Int64, free: Int64) -> String? {
+        guard free < required(need) else { return nil }
+        return "needs \(bytesLabel(need)) · \(bytesLabel(max(0, free))) free"
+            + " — clear space or pick a smaller model"
+    }
+
+    /// Download size plus 15%. CoreML unpacks and recompiles the weights, and
+    /// a volume that exactly fits fails partway; 15% covers the working set
+    /// on turbo (~480 MB) without refusing an otherwise-fine base download.
+    /// ponytail: flat percentage, not a per-model measured working set.
+    static func required(_ bytes: Int64) -> Int64 { bytes + bytes / 100 * 15 }
+
+    #if DEBUG
+    /// Both directions of the comparison: a false refusal strands a user who
+    /// had room, and a missing one lets a 3 GB download die at 90%.
+    static func selfCheck() {
+        let turbo = models.last!
+        assert(turbo.bytes == 3_195_115_988)          // measured, not guessed
+        assert(required(1_000_000_000) == 1_150_000_000)
+
+        // Free space is compared against size+15%, not size.
+        let n = turbo.bytes
+        assert(shortfall(need: n, free: 10_000_000_000) == nil)
+        assert(shortfall(need: n, free: n) != nil)              // exact fit fails
+        assert(shortfall(need: n, free: 0) != nil)
+        assert(shortfall(need: n, free: required(n)) == nil)
+        // Unreadable volume must not manufacture a refusal.
+        assert(shortfall(need: n, free: .max) == nil)
+        // Both figures present, quill's voice: no exclamation, no
+        // capitalized prose. Units stay uppercase ("GB" is a unit).
+        let msg = shortfall(need: n, free: 0)!
+        assert(msg.contains("needs 3.2 GB") && msg.contains("0 MB free"))
+        assert(!msg.contains("!") && !msg.contains("Zero"))
+        assert(bytesLabel(0) == "0 MB")
+    }
+    #endif
 }

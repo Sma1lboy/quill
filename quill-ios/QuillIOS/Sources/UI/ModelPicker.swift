@@ -9,12 +9,14 @@ struct ModelPicker: View {
     // wrong radio while the queue downloaded and used the other model.
     @AppStorage("quill.model") private var selectedID = ModelCatalog.defaultID
     @State private var refresh = 0
+    @State private var pendingDelete: ModelCatalog.Model?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(ModelCatalog.models) { model in
                 let active = selectedID == model.id
                 let downloaded = ModelCatalog.isDownloaded(model.id)
+                let blocker = ModelCatalog.downloadBlocker(for: model)
 
                 Button {
                     selectedID = model.id
@@ -43,6 +45,15 @@ struct ModelPicker: View {
                             .foregroundStyle(Theme.muted.opacity(0.8))
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.leading, 22)
+                        // Say it here rather than letting the download die at
+                        // 90% and surface as "transcription failed".
+                        if let blocker {
+                            Text(blocker)
+                                .font(Theme.mono(9))
+                                .foregroundStyle(Theme.error)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.leading, 22)
+                        }
                     }
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -60,8 +71,16 @@ struct ModelPicker: View {
                 .contextMenu {
                     if downloaded {
                         Button(role: .destructive) {
-                            ModelCatalog.delete(model.id)
-                            refresh += 1
+                            // Deleting the model in use means the next
+                            // recording silently re-downloads it, possibly on
+                            // cellular. Confirm that one; an inactive model
+                            // costs nothing to drop, so it stays one tap.
+                            if active {
+                                pendingDelete = model
+                            } else {
+                                ModelCatalog.delete(model.id)
+                                refresh += 1
+                            }
                         } label: {
                             Label("Delete download (\(model.size))", systemImage: "trash")
                         }
@@ -71,6 +90,30 @@ struct ModelPicker: View {
             Text("hold a model to delete its download · switch applies to the next recording")
                 .font(Theme.mono(9))
                 .foregroundStyle(Theme.muted.opacity(0.6))
+        }
+        // Same grammar as the session delete dialog: lowercase, states the
+        // consequence, cancel declared explicitly (the implicit one follows
+        // the system language, not quill's voice).
+        .confirmationDialog(
+            "delete the model in use?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let model = pendingDelete {
+                Button("delete \(model.size)", role: .destructive) {
+                    ModelCatalog.delete(model.id)
+                    pendingDelete = nil
+                    refresh += 1
+                }
+            }
+            Button("cancel", role: .cancel) { pendingDelete = nil }
+        } message: {
+            if let model = pendingDelete {
+                Text("the next recording re-downloads \(model.size)")
+            }
         }
         .id(refresh)
     }

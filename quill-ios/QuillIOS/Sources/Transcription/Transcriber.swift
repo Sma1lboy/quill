@@ -30,10 +30,10 @@ actor Transcriber {
 
     /// Auto-retry ceiling. A session that failed this many times is not
     /// queued at launch any more — the failure is usually deterministic (a
-    /// corrupt model, an unreadable CAF), and re-loading a 1.6 GB model on
-    /// every launch forever costs the user battery and bandwidth to produce
-    /// the same error. `enqueue` ignores the cap, so the manual retry path
-    /// always works.
+    /// corrupt model, an unreadable CAF), and re-loading a multi-gigabyte
+    /// model on every launch forever costs the user battery and bandwidth to
+    /// produce the same error. `enqueue` ignores the cap, so the manual retry
+    /// path always works.
     static let maxAutoAttempts = 3
 
     /// Failed automatic attempts recorded in meta.json.
@@ -358,6 +358,13 @@ actor Transcriber {
         let folder: URL
         if ModelCatalog.isDownloaded(modelID) {
             folder = ModelCatalog.folder(for: modelID)
+        } else if let blocker = ModelCatalog.downloadBlocker(for: ModelCatalog.selected) {
+            // Refuse before starting: a 3 GB download that dies at 90% burns
+            // the user's cellular data and surfaces as a generic failure.
+            log(logDir, "model download blocked — \(blocker)")
+            throw NSError(domain: "quill", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: blocker,
+            ])
         } else {
             let handler = statusHandler
             var lastTenth = -1
