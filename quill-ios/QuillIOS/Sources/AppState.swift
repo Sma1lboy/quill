@@ -212,11 +212,32 @@ final class AppState: ObservableObject {
         sessions = SessionSummary.scan(root: root)
     }
 
-    /// Delete a session: one tap, no dialog — the folder moves into
-    /// Documents/.trash instead of vanishing, so a slip is recoverable
-    /// from Files. Trash older than 7 days is purged on launch.
+    /// Rename a session — stores the title in meta.json, which
+    /// `SessionSummary.scan` already reads, so the home list and search rows
+    /// both follow. Empty clears it back to the timestamp.
+    func renameSession(id: String, to title: String) {
+        FoundationModelsEnhance.saveTitle(
+            title,
+            in: root.appendingPathComponent(id, isDirectory: true),
+            overwrite: true
+        )
+        refreshSessions()
+    }
+
+    /// True while this session is recording or being transcribed — deleting it
+    /// would pull the folder out from under the writer.
+    func isBusy(id: String) -> Bool {
+        if id == recordingID { return true }
+        if case .transcribing(let s, _, _) = pipeline, s == id { return true }
+        return false
+    }
+
+    /// Delete a session: the folder moves into Documents/.trash instead of
+    /// vanishing, so a slip is recoverable from Files. Trash older than 7 days
+    /// is purged on launch. Refuses while the session is busy — the swipe row
+    /// and the detail menu both gate on `isBusy` first, this is the backstop.
     func deleteSession(id: String) {
-        guard id != recordingID else { return }
+        guard !isBusy(id: id) else { return }
         let fm = FileManager.default
         let trash = root.deletingLastPathComponent()
             .appendingPathComponent(".trash", isDirectory: true)

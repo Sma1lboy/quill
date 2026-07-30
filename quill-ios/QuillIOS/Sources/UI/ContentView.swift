@@ -380,7 +380,9 @@ private struct SessionList: View {
                     LazyVStack(spacing: 2) {
                         ForEach(state.sessions) { session in
                             SwipeToDeleteRow(
-                                disabled: state.recordingID == session.id,
+                                // No swiping a session out from under the
+                                // recorder or the transcription queue.
+                                disabled: state.isBusy(id: session.id),
                                 onDelete: { state.deleteSession(id: session.id) }
                             ) {
                                 NavigationLink(value: session.id) {

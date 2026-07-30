@@ -17,7 +17,16 @@ struct SessionDetailView: View {
     @State private var enhancing = false
     @State private var enhanceError: String?
     @State private var showTranscript = false
+    @State private var renaming = false
+    @State private var draftTitle = ""
+    @State private var confirmDelete = false
+    @State private var zipping = false
+    @State private var share: SharePayload?
+    /// Rename/share failure — `enhanceError` only renders when notes are
+    /// absent, so these need their own line.
+    @State private var actionError: String?
     @StateObject private var playback = PlaybackModel()
+    @Environment(\.dismiss) private var dismiss
 
     private var session: SessionSummary? {
         state.sessions.first { $0.id == id }
@@ -164,9 +173,9 @@ struct SessionDetailView: View {
         .navigationTitle(session?.title ?? id)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // Matched pair: same size, same weight, same frame — the
-            // mismatched heights came from photo.badge.plus's asymmetric
-            // glyph next to the taller share arrow.
+            // Matched pair: same size, same weight, same 30pt frame, so the
+            // two glyphs sit on one optical line. Attach is the one action
+            // frequent enough to stay out of the menu.
             ToolbarItemGroup(placement: .primaryAction) {
                 PhotosPicker(
                     selection: $pickerItems,
@@ -179,20 +188,62 @@ struct SessionDetailView: View {
                         .frame(width: 30, height: 30)
                 }
 
-                if FileManager.default.fileExists(
-                    atPath: dir.appendingPathComponent("transcript.md").path
-                ) {
-                    ShareLink(item: shareItem) {
-                        Image(systemName: "square.and.arrow.up")
+                Menu {
+                    Button("rename") {
+                        draftTitle = session?.contentTitle ?? ""
+                        renaming = true
+                    }
+
+                    if FileManager.default.fileExists(
+                        atPath: dir.appendingPathComponent("transcript.md").path
+                    ) {
+                        // The note (or transcript) as one file — the common share.
+                        ShareLink("share note", item: shareItem)
+                    }
+                    // The whole folder: audio, transcript, notes, images.
+                    Button("share folder") { shareFolder() }
+                        .disabled(zipping)
+
+                    Divider()
+
+                    Button("delete", role: .destructive) { confirmDelete = true }
+                        .disabled(state.isBusy(id: id))
+                } label: {
+                    if zipping {
+                        BrailleSpinner(size: 12).frame(width: 30, height: 30)
+                    } else {
+                        Image(systemName: "ellipsis.circle")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(Theme.accent)
                             .frame(width: 30, height: 30)
-                            // The share glyph's arrow rides above its box —
-                            // nudge down so both icons sit on one optical line.
-                            .offset(y: -1)
                     }
                 }
+                .accessibilityLabel("Session actions")
             }
+        }
+        // Rename: a plain alert text field. The title lands in meta.json, so
+        // the home list and search rows pick it up on the next scan.
+        .alert("rename session", isPresented: $renaming) {
+            TextField("title", text: $draftTitle)
+            Button("cancel", role: .cancel) {}
+            Button("save") { state.renameSession(id: id, to: draftTitle) }
+        } message: {
+            Text("empty falls back to the timestamp")
+        }
+        .confirmationDialog(
+            "delete this session?",
+            isPresented: $confirmDelete,
+            titleVisibility: .visible
+        ) {
+            Button("delete", role: .destructive) {
+                state.deleteSession(id: id)
+                dismiss()
+            }
+        } message: {
+            Text("the folder moves to .trash — recoverable from Files for 7 days")
+        }
+        .sheet(item: $share) { payload in
+            ActivityView(url: payload.url)
         }
         // Record / pause / resume / stop docked at the bottom — only while
         // this session can still record: live now, or a note with no audio
@@ -214,6 +265,11 @@ struct SessionDetailView: View {
             }
         }
         .task(id: state.pipeline) { reload() }
+        .task {
+            #if DEBUG
+            SessionActions.selfCheck()
+            #endif
+        }
         .onAppear { reload() }
         .onDisappear { playback.teardown() }
         .onChange(of: pickerItems) { _, items in
@@ -258,6 +314,22 @@ struct SessionDetailView: View {
         }
     }
 
+    /// Zip the session folder off the main actor, then hand it to the share
+    /// sheet. Failures land in the facts block next to the notes error.
+    private func shareFolder() {
+        guard !zipping else { return }
+        zipping = true
+        let sessionDir = dir
+        Task {
+            let result = await Task.detached { try SessionActions.zip(sessionDir) }.result
+            zipping = false
+            switch result {
+            case .success(let url): share = SharePayload(url: url)
+            case .failure(let error): actionError = "share failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private func reload() {
         transcript = Transcript.read(from: dir)
         notes = try? String(
@@ -278,6 +350,12 @@ struct SessionDetailView: View {
 
     private var factsBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
+            if let reason = actionError {
+                Text(reason)
+                    .font(Theme.mono(9))
+                    .foregroundStyle(Theme.error)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let session {
                 factLine("kind", session.kind)
                 if let d = session.duration {

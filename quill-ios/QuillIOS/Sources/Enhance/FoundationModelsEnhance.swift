@@ -107,15 +107,26 @@ struct FoundationModelsEnhance: EnhanceService {
         #endif
     }
 
-    /// Merge the generated title into meta.json (single source the list
-    /// reads); never overwrites a user-set title.
-    static func saveTitle(_ title: String, in dir: URL) {
+    /// Merge a title into meta.json — the single source `SessionSummary.scan`
+    /// reads, so the home list and search both pick it up. The generated
+    /// title never overwrites one already there; a user rename passes
+    /// `overwrite: true`. An empty title clears the key, falling the row back
+    /// to its timestamp.
+    ///
+    /// `.atomic` writes via temp + rename, so a crash mid-write keeps the old
+    /// meta.json rather than truncating it.
+    static func saveTitle(_ title: String, in dir: URL, overwrite: Bool = false) {
         let url = dir.appendingPathComponent("meta.json")
         guard let data = try? Data(contentsOf: url),
               var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
-        guard (json["title"] as? String)?.isEmpty != false else { return }
-        json["title"] = title
+        guard overwrite || (json["title"] as? String)?.isEmpty != false else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            json.removeValue(forKey: "title")
+        } else {
+            json["title"] = trimmed
+        }
         if let out = try? JSONSerialization.data(
             withJSONObject: json, options: [.prettyPrinted, .sortedKeys]
         ) {
