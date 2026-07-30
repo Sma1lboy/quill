@@ -1,6 +1,6 @@
-<!-- iOS sibling: ../quill-ios (WhisperKit engine, ~100 languages incl. zh;
-     this macOS app still runs Parakeet v2 English — swap to WhisperKit or
-     Parakeet v3 if multilingual is needed here too). -->
+<!-- iOS sibling: ../quill-ios — same WhisperKit engine and same on-disk
+     session schema, but its own model picker, diarization, and notes
+     backends. -->
 # quill-app
 
 Menu-bar meeting recorder for macOS — record any time, transcribe on-device,
@@ -11,7 +11,7 @@ popover UI designed per Apple's fluid-interface principles.
 ## Pipeline
 
 ```
-record (mic.caf + system.caf) → transcribe (Parakeet, on-device)
+record (mic.caf + system.caf) → transcribe (WhisperKit, on-device)
     → transcript.json / transcript.md → LLM structuring → notes.md
 ```
 
@@ -28,7 +28,7 @@ swift build -c release
 
 Requires macOS 15+ (Core Audio process taps). First recording prompts for
 Microphone and System Audio Recording permissions; first transcription
-downloads the Parakeet models (~600 MB) once.
+downloads `openai_whisper-small` (~460 MB) once.
 
 ## UI
 
@@ -45,7 +45,11 @@ Click the feather in the menu bar:
 ```json
 {
   "recordings_dir": "~/Recordings",
-  "transcription": { "enabled": true, "engine": "parakeet" },
+  "transcription": {
+    "enabled": true,
+    "engine": "whisperkit",
+    "languages": ["en", "zh-Hans"]
+  },
   "mic_voice_processing": false,
   "on_stop": "my-hook",
   "notes": {
@@ -56,6 +60,18 @@ Click the feather in the menu bar:
 }
 ```
 
+`whisperkit` is the only engine — anything else warns to stderr and the
+session's `transcribe.log`, then transcribes with whisperkit anyway.
+
+`transcription.languages` is an allow-set, same semantics as the iOS
+sibling's picker: omit or leave empty to auto-detect per recording, one entry
+to force it, several to restrict detection to that set (mixed-language
+speakers). `zh-Hans`/`zh-Hant` are both `zh` to whisper, so the chosen script
+is enforced by ICU transform on the output. Unknown codes warn and are
+ignored.
+
 `notes.command` is any stdin→stdout CLI (`claude -p`, `ollama run llama3`,
 `llm`…). It runs through a login shell so your PATH applies. A structuring
-failure never loses anything — the transcript is already on disk.
+failure never loses anything — the transcript is already on disk: a missing
+command, a non-zero exit, empty output, or a run past 15 minutes all log to
+`transcribe.log` and notify, leaving the transcript untouched.

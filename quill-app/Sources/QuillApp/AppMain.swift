@@ -4,6 +4,16 @@ import SwiftUI
 @main
 enum QuillAppMain {
     static func main() {
+        // Writing the transcript to a structuring command that already exited
+        // (`claude` not on the LaunchAgent PATH) otherwise takes quill down with
+        // SIGPIPE mid-write. Ignored here so the write returns EPIPE and
+        // NotesStructurer can report it as a normal failure.
+        signal(SIGPIPE, SIG_IGN)
+
+        #if DEBUG
+        WhisperKitEngine.selfCheck()
+        #endif
+
         let env = ProcessInfo.processInfo.environment
         let root = env["QUILL_ROOT"].map {
             URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
@@ -103,12 +113,16 @@ final class AppState: ObservableObject {
         // The preview harness renders fake sessions — don't try to transcribe them.
         guard ProcessInfo.processInfo.environment["QUILL_PREVIEW"] == nil else { return }
 
+        // Built outside the Task deliberately: the coordinator stores this
+        // handler for the process's life, so it must hold us weakly — nested
+        // inside the Task, the `weak self` sat under an implicit strong capture
+        // of self in the enclosing closure (the AppState → coordinator →
+        // handler → AppState cycle the compiler was warning about).
+        let onStatus: @Sendable (TranscriptionCoordinator.Status) -> Void = { [weak self] status in
+            Task { @MainActor in self?.pipelineChanged(status) }
+        }
         Task { [transcription] in
-            await transcription.setStatusHandler { status in
-                Task { @MainActor [weak self] in
-                    self?.pipelineChanged(status)
-                }
-            }
+            await transcription.setStatusHandler(onStatus)
             await transcription.resumePending(root: root)
         }
     }

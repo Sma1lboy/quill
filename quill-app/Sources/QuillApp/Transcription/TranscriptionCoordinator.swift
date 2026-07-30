@@ -101,7 +101,7 @@ actor TranscriptionCoordinator {
 
     private func transcribe(_ dir: URL) async throws {
         let meta = try SessionMeta.read(from: dir)
-        let engine = try await preparedEngine()
+        let engine = try await preparedEngine(logDir: dir)
 
         var merged: [Transcript.Segment] = []
         for track in meta.tracks {
@@ -164,15 +164,18 @@ actor TranscriptionCoordinator {
         }
     }
 
-    private func preparedEngine() async throws -> TranscriptionEngine {
+    private func preparedEngine(logDir: URL) async throws -> TranscriptionEngine {
         if let engine { return engine }
         let configured = Config.transcriptionEngine()
         if configured != "whisperkit" {
-            FileHandle.standardError.write(Data(
-                "warning: unknown transcription engine \"\(configured)\" — using whisperkit\n".utf8
-            ))
+            // stderr alone is invisible under a LaunchAgent — put it where the
+            // user already looks when a session comes out wrong.
+            let warning = "warning: unknown transcription engine "
+                + "\"\(configured)\" — using whisperkit"
+            FileHandle.standardError.write(Data((warning + "\n").utf8))
+            log(logDir, warning)
         }
-        let engine = WhisperKitEngine()
+        let engine = WhisperKitEngine(languages: Config.transcriptionLanguages())
         try await engine.prepare()
         self.engine = engine
         return engine

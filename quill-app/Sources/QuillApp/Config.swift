@@ -4,7 +4,11 @@ import Foundation
 ///
 ///     {
 ///       "recordings_dir": "~/Recordings",
-///       "transcription": { "enabled": true, "engine": "parakeet" },
+///       "transcription": {
+///         "enabled": true,
+///         "engine": "whisperkit",
+///         "languages": ["en", "zh-Hans"]
+///       },
 ///       "mic_voice_processing": true,
 ///       "on_stop": "my-hook",
 ///       "notes": { "enabled": true, "command": "claude -p", "prompt": "…" }
@@ -43,6 +47,14 @@ enum Config {
     /// warns and falls back for anything else.
     static func transcriptionEngine() -> String {
         transcription()?["engine"] as? String ?? "whisperkit"
+    }
+
+    /// Whisper language allow-set. Empty (or absent) = auto-detect per
+    /// recording; one entry forces it; several restrict detection to that set.
+    /// `zh-Hans`/`zh-Hant` are both "zh" to whisper — the chosen script is
+    /// enforced by ICU transform on the output, same as iOS.
+    static func transcriptionLanguages() -> [String] {
+        (transcription()?["languages"] as? [String])?.filter { !$0.isEmpty } ?? []
     }
 
     private static func transcription() -> [String: Any]? {
