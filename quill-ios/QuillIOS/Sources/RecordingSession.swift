@@ -74,7 +74,7 @@ final class RecordingSession {
         let data = try JSONSerialization.data(
             withJSONObject: meta, options: [.prettyPrinted, .sortedKeys]
         )
-        try data.write(to: candidate.appendingPathComponent("meta.json"))
+        try data.write(to: candidate.appendingPathComponent("meta.json"), options: .atomic)
         return candidate
     }
 

@@ -28,17 +28,45 @@ actor Transcriber {
         statusHandler = handler
     }
 
+    /// Auto-retry ceiling. A session that failed this many times is not
+    /// queued at launch any more — the failure is usually deterministic (a
+    /// corrupt model, an unreadable CAF), and re-loading a 1.6 GB model on
+    /// every launch forever costs the user battery and bandwidth to produce
+    /// the same error. `enqueue` ignores the cap, so the manual retry path
+    /// always works.
+    static let maxAutoAttempts = 3
+
+    /// Failed automatic attempts recorded in meta.json.
+    static func failedAttempts(in dir: URL) -> Int {
+        SessionMeta.read(in: dir)["transcribe_failures"] as? Int ?? 0
+    }
+
+    /// Only touches meta.json when there's actually a count to clear — a
+    /// blind patch would create a `{}` meta in a folder that has none.
+    private static func clearFailures(in dir: URL) {
+        guard failedAttempts(in: dir) > 0 else { return }
+        SessionMeta.patch(in: dir) { $0.removeValue(forKey: "transcribe_failures") }
+    }
+
     func enqueue(_ sessionDir: URL) {
         // A note stopped with zero captured audio has nothing to transcribe.
         guard FileManager.default.fileExists(
             atPath: sessionDir.appendingPathComponent("mic.caf").path
         ) else { return }
+        guard !Self.isMultiTrack(sessionDir) else { return }
         guard !queue.contains(sessionDir) else { return }
+        // An explicit enqueue is a user action (stop, or the retry button):
+        // clear the counter so a session that failed twice and is retried by
+        // hand gets a full set of automatic attempts again.
+        Self.clearFailures(in: sessionDir)
         queue.append(sessionDir)
         drainIfIdle()
     }
 
     func resumePending(root: URL) {
+        #if DEBUG
+        Self.selfCheckTracks()
+        #endif
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: root, includingPropertiesForKeys: nil
@@ -50,6 +78,8 @@ actor Transcriber {
             .filter {
                 fm.fileExists(atPath: $0.appendingPathComponent("mic.caf").path)
                     && !fm.fileExists(atPath: $0.appendingPathComponent("transcript.json").path)
+                    && Self.failedAttempts(in: $0) < Self.maxAutoAttempts
+                    && !Self.isMultiTrack($0)
             }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         for dir in pending where !queue.contains(dir) {
@@ -79,6 +109,9 @@ actor Transcriber {
                 // queue item.
                 pipe = nil
                 pipeModelID = nil
+                // Succeeded — drop any failure count from earlier attempts so
+                // the session doesn't carry a stale marker.
+                Self.clearFailures(in: dir)
                 await enhanceWithFallback(dir)
                 let hasNotes = FileManager.default.fileExists(
                     atPath: dir.appendingPathComponent("notes.md").path
@@ -86,7 +119,12 @@ actor Transcriber {
                 Notify.transcriptReady(session: dir.lastPathComponent, hasNotes: hasNotes)
             } catch {
                 lastFailure = dir.lastPathComponent
-                log(dir, "transcription failed: \(error)")
+                let attempts = Self.failedAttempts(in: dir) + 1
+                SessionMeta.patch(in: dir) { $0["transcribe_failures"] = attempts }
+                log(dir, "transcription failed (attempt \(attempts)/\(Self.maxAutoAttempts)): \(error)")
+                if attempts >= Self.maxAutoAttempts {
+                    log(dir, "giving up automatically — use retry in the session screen")
+                }
             }
         }
         // Release model memory when the queue drains; reload lazily.
@@ -105,6 +143,37 @@ actor Transcriber {
     private static func sliceSeconds(total: Double) -> Double {
         min(120, max(15, total / 8))
     }
+
+    /// A session the macOS sibling recorded from two sources (mic + system
+    /// audio, speakers "me"/"them"). iOS records one track and its whole
+    /// transcribe path — language detect, slicing, the single `doneSeconds`
+    /// checkpoint — assumes one file, so transcribing this here would emit
+    /// the mic half only *and* write transcript.json, which is exactly what
+    /// stops the Mac from ever doing it properly. Leave it for the Mac.
+    ///
+    /// Only reachable once sessions are shared between devices (iCloud/Files);
+    /// nothing iOS records ever has a "system" track.
+    ///
+    /// ponytail: skip, not merge — multi-track on iOS needs per-track
+    /// checkpointing, and the Mac already does this correctly.
+    static func isMultiTrack(_ dir: URL) -> Bool {
+        isMultiTrack(files: SessionMeta.read(in: dir)["files"] as? [String: String])
+    }
+
+    static func isMultiTrack(files: [String: String]?) -> Bool {
+        files?["system"] != nil
+    }
+
+    #if DEBUG
+    /// A mis-read here silently drops half a synced meeting's transcript, and
+    /// the symptom (a one-sided transcript) looks like bad audio.
+    static func selfCheckTracks() {
+        assert(isMultiTrack(files: ["mic": "mic.caf", "system": "system.caf"]))
+        assert(!isMultiTrack(files: ["mic": "mic.caf"]))   // every iOS session
+        assert(!isMultiTrack(files: [:]))                  // empty note folder
+        assert(!isMultiTrack(files: nil))                  // no meta.json yet
+    }
+    #endif
 
     private func transcribe(_ dir: URL) async throws {
         let audio = dir.appendingPathComponent("mic.caf")
