@@ -11,6 +11,18 @@ enum DevSettings {
         return false
         #endif
     }
+
+    /// Every UserDefaults key quill owns. "reset all settings" listed only
+    /// two of them, so a reset left the custom notes prompt, the llama
+    /// opt-in, and the onboarding flag behind — the one thing a reset is
+    /// for. Add new keys here.
+    static let allKeys = [
+        "quill.languages",
+        "quill.model",
+        "quill.enhancePrompt",
+        "quill.llamaFallback",
+        "quill.onboarded",
+    ]
 }
 
 struct DevSection: View {
@@ -43,10 +55,12 @@ struct DevSection: View {
                             .frame(width: 110, alignment: .leading)
                         Text(line.1)
                             .font(Theme.mono(10, .medium))
-                            .foregroundStyle(
-                                line.1.contains("available") || line.1.contains("supported")
-                                    ? Theme.accent : Theme.ink
-                            )
+                            // The probe says whether the value is good; the
+                            // view doesn't guess from the prose. Substring
+                            // matching read "unavailable" as available (it
+                            // contains it) and "not supported" as supported,
+                            // painting dead capabilities terracotta.
+                            .foregroundStyle(AICapabilities.isGood(line.1) ? Theme.accent : Theme.ink)
                     }
                 }
             }
@@ -70,10 +84,10 @@ struct DevSection: View {
                 }
                 row("reset all settings") {
                     let defaults = UserDefaults.standard
-                    for key in ["quill.languages", "quill.model"] {
+                    for key in DevSettings.allKeys {
                         defaults.removeObject(forKey: key)
                     }
-                    status = "settings reset"
+                    status = "settings reset — relaunch to see onboarding"
                 }
                 row("wipe all recordings", destructive: true) {
                     confirmWipe = true

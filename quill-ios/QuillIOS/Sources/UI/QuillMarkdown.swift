@@ -16,6 +16,15 @@ struct QuillMarkdown: View {
                 FontSize(.em(0.85))
                 ForegroundColor(Theme.accent)
             }
+            // MarkdownUI's default image provider FETCHES `![](http://…)` over
+            // the network. notes.md is LLM output (and user-editable in Files),
+            // so a stray image link would quietly make a request off the phone
+            // — breaking the "nothing leaves this device" contract the whole
+            // app is sold on. `.asset` resolves bundle resources only, never
+            // the network; a link to something we don't ship renders as
+            // nothing, which is the right outcome for a local-first note.
+            .markdownImageProvider(.asset)
+            .markdownInlineImageProvider(.asset)
             .textSelection(.enabled)
     }
 }

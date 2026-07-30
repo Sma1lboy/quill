@@ -9,6 +9,10 @@ struct NotesModelSection: View {
     @State private var progress: Double = 0
     @State private var downloadError: String?
     @State private var refresh = 0
+    /// Held so switching the fallback off aborts an in-flight download —
+    /// otherwise the ~1 GB keeps arriving after the user opted out, with the
+    /// progress UI already hidden.
+    @State private var downloadTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -76,6 +80,11 @@ struct NotesModelSection: View {
                                 Text("downloading qwen · \(Int(progress * 100))%")
                                     .font(Theme.mono(10))
                                     .foregroundStyle(Theme.muted)
+                                Spacer(minLength: 0)
+                                Button("cancel") { downloadTask?.cancel() }
+                                    .font(Theme.mono(10, .medium))
+                                    .foregroundStyle(Theme.accent)
+                                    .buttonStyle(.plain)
                             }
                             GeometryReader { geo in
                                 ZStack(alignment: .leading) {
@@ -87,6 +96,13 @@ struct NotesModelSection: View {
                             }
                             .frame(height: 3)
                         }
+                    } else if let blocker = LlamaEnhance.downloadBlocker {
+                        // Say it before the tap, same rule and voice as the
+                        // whisper picker — not after a gigabyte has failed.
+                        Text(blocker)
+                            .font(Theme.mono(9))
+                            .foregroundStyle(Theme.error)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
                         Button {
                             startDownload()
@@ -110,6 +126,9 @@ struct NotesModelSection: View {
             }
         }
         .id(refresh)
+        .onChange(of: llamaEnabled) { _, enabled in
+            if !enabled { downloadTask?.cancel() }
+        }
         .contextMenu {
             if LlamaEnhance.isDownloaded {
                 Button(role: .destructive) {
@@ -123,17 +142,24 @@ struct NotesModelSection: View {
     }
 
     private func startDownload() {
+        guard downloadTask == nil else { return } // no double-tap into two 1 GB pulls
         downloading = true
         downloadError = nil
-        Task {
+        progress = 0
+        downloadTask = Task {
             do {
                 try await LlamaEnhance.download { p in
                     Task { @MainActor in progress = p }
                 }
+            } catch is CancellationError {
+                // User's own choice — no error to report.
+            } catch let error as URLError where error.code == .cancelled {
+                // URLSession reports our cancel as NSURLErrorCancelled.
             } catch {
                 downloadError = "download failed: \(error.localizedDescription)"
             }
             downloading = false
+            downloadTask = nil
             refresh += 1
         }
     }

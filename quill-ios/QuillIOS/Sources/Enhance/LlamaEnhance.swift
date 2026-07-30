@@ -23,38 +23,144 @@ struct LlamaEnhance: EnhanceService {
         UserDefaults.standard.bool(forKey: "quill.llamaFallback")
     }
 
+    /// Existence isn't enough: a build before the size guard (or a file
+    /// restored half-written) leaves a truncated GGUF that reports "ON DISK"
+    /// and then fails to load forever, with no way to retry from the UI.
+    /// Size is the cheap proxy for complete.
     static var isDownloaded: Bool {
-        FileManager.default.fileExists(atPath: modelURL.path)
+        let size = (try? modelURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        return Int64(size) >= minModelBytes
     }
 
     static func deleteModel() {
         try? FileManager.default.removeItem(at: modelURL.deletingLastPathComponent())
     }
 
+    /// Floor for "this is really the Qwen Q4 GGUF" — the real file is ~1.1 GB,
+    /// so anything under 900 MB is a truncated body or an error page.
+    /// ponytail: size check, not a SHA — a hash means shipping a digest we
+    /// have nowhere to pin. Upgrade if HF starts serving partial 200s.
+    static let minModelBytes: Int64 = 900_000_000
+
+    /// Download size, for the pre-flight space check. Exact, from the
+    /// HuggingFace API file listing (and the `x-linked-size` header) for
+    /// qwen2.5-1.5b-instruct-q4_k_m.gguf on 2026-07-30.
+    static let downloadBytes: Int64 = 1_117_320_736
+
+    /// Why the download can't start, or nil when it can. Same helpers the
+    /// whisper picker uses, so both downloads refuse on the same rule and in
+    /// the same voice.
+    static var downloadBlocker: String? {
+        #if DEBUG
+        selfCheck()
+        #endif
+        guard !isDownloaded else { return nil }
+        return ModelCatalog.shortfall(need: downloadBytes, free: ModelCatalog.freeBytes())
+    }
+
+    #if DEBUG
+    /// The completeness guard, both directions: too low a floor accepts a
+    /// truncated GGUF as "ON DISK" (loads fail forever, no retry path), too
+    /// high a one rejects the real file.
+    static func selfCheck() {
+        assert(minModelBytes < downloadBytes, "the real model must pass its own floor")
+        assert(minModelBytes > downloadBytes / 2, "floor too low to catch a half-finished body")
+        // An HTML error page served as 200 is kilobytes, not gigabytes.
+        assert(Int64(4_096) < minModelBytes)
+        // Space check runs against size+15%, so an exact fit must refuse.
+        assert(ModelCatalog.shortfall(need: downloadBytes, free: downloadBytes) != nil)
+        assert(ModelCatalog.shortfall(need: downloadBytes, free: 10_000_000_000) == nil)
+    }
+    #endif
+
     static func download(progress: @escaping @Sendable (Double) -> Void) async throws {
         let dir = modelURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        let delegate = DownloadProgressDelegate(onProgress: progress)
-        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
-        let (tmp, response) = try await session.download(from: downloadURL)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+        // Refuse before spending a gigabyte of the user's bandwidth on a
+        // download that can't land.
+        if let blocker = downloadBlocker {
+            throw NSError(domain: "quill", code: 4, userInfo: [NSLocalizedDescriptionKey: blocker])
+        }
+
+        let (tmp, response) = try await DownloadTask.run(downloadURL, onProgress: progress)
+        // The delegate hands back a file we own; drop it on any failure path
+        // so a rejected download can't leave a gigabyte parked in tmp.
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw NSError(domain: "quill", code: 2, userInfo: [
                 NSLocalizedDescriptionKey: "model download failed (\((response as? HTTPURLResponse)?.statusCode ?? -1))",
+            ])
+        }
+        // A truncated body still arrives as a valid 200 download. Committing
+        // it would leave `isDownloaded == true` over a corrupt file, and the
+        // only symptom is "model load failed" forever with no way to retry.
+        let size = (try? tmp.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+        guard size >= minModelBytes else {
+            throw NSError(domain: "quill", code: 5, userInfo: [
+                NSLocalizedDescriptionKey:
+                    "download incomplete (\(ModelCatalog.bytesLabel(size))) — try again",
             ])
         }
         _ = try FileManager.default.replaceItemAt(modelURL, withItemAt: tmp)
     }
 
-    private final class DownloadProgressDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-        let onProgress: @Sendable (Double) -> Void
-        init(onProgress: @escaping @Sendable (Double) -> Void) { self.onProgress = onProgress }
+    /// `URLSession.download(from:)` (the async one) never invokes the
+    /// session's `didWriteData` delegate callback — verified: 0 callbacks for
+    /// a full 8 MB body, whether the delegate is attached at session or task
+    /// level. Only the classic `downloadTask` + delegate pair reports
+    /// progress, so the continuation bridge is what makes the progress bar
+    /// real. Also gives us cancellation for free.
+    private final class DownloadTask: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+        private let onProgress: @Sendable (Double) -> Void
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<URL, Error>?
+        private var settled = false
 
-        func urlSession(
-            _ session: URLSession, task: URLSessionTask,
-            didSendBodyData bytesSent: Int64,
-            totalBytesSent: Int64, totalBytesExpectedToSend: Int64
-        ) {}
+        private init(onProgress: @escaping @Sendable (Double) -> Void) {
+            self.onProgress = onProgress
+        }
+
+        static func run(
+            _ url: URL, onProgress: @escaping @Sendable (Double) -> Void
+        ) async throws -> (URL, URLResponse?) {
+            let delegate = DownloadTask(onProgress: onProgress)
+            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+            defer { session.finishTasksAndInvalidate() }
+            let task = session.downloadTask(with: url)
+            let file = try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { k in
+                    delegate.attach(k)
+                    task.resume()
+                }
+            } onCancel: {
+                task.cancel()
+            }
+            return (file, task.response)
+        }
+
+        private func attach(_ k: CheckedContinuation<URL, Error>) {
+            lock.lock(); defer { lock.unlock() }
+            // Cancelled before the task started — resume here or we hang.
+            if settled { k.resume(throwing: CancellationError()) } else { continuation = k }
+        }
+
+        /// Resume exactly once: `didFinishDownloadingTo` and
+        /// `didCompleteWithError` both fire on a successful download.
+        private func finish(_ result: Result<URL, Error>) {
+            lock.lock()
+            guard !settled else { lock.unlock(); return }
+            settled = true
+            let k = continuation
+            continuation = nil
+            lock.unlock()
+            guard let k else { return }
+            switch result {
+            case .success(let url): k.resume(returning: url)
+            case .failure(let error): k.resume(throwing: error)
+            }
+        }
 
         func urlSession(
             _ session: URLSession, downloadTask: URLSessionDownloadTask,
@@ -63,6 +169,28 @@ struct LlamaEnhance: EnhanceService {
         ) {
             guard totalBytesExpectedToWrite > 0 else { return }
             onProgress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        }
+
+        func urlSession(
+            _ session: URLSession, downloadTask: URLSessionDownloadTask,
+            didFinishDownloadingTo location: URL
+        ) {
+            // URLSession deletes `location` the moment this returns, so move
+            // it out before resuming the caller.
+            let kept = FileManager.default.temporaryDirectory
+                .appendingPathComponent("quill-model-\(UUID().uuidString)")
+            do {
+                try FileManager.default.moveItem(at: location, to: kept)
+                finish(.success(kept))
+            } catch {
+                finish(.failure(error))
+            }
+        }
+
+        func urlSession(
+            _ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?
+        ) {
+            if let error { finish(.failure(error)) }
         }
     }
 
