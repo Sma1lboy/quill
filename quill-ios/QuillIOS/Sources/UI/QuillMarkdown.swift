@@ -9,7 +9,10 @@ struct QuillMarkdown: View {
     let content: String
 
     var body: some View {
-        Markdown(content)
+        #if DEBUG
+        Self.selfCheck()
+        #endif
+        return Markdown(Self.clampListDepth(content))
             .markdownTheme(.quill)
             .markdownTextStyle(\.code) {
                 FontFamilyVariant(.monospaced)
@@ -27,6 +30,79 @@ struct QuillMarkdown: View {
             .markdownInlineImageProvider(.asset)
             .textSelection(.enabled)
     }
+
+    /// MarkdownUI nests a fresh `BulletedListView`/`ListItemSequence` pair per
+    /// level, so SwiftUI layout cost grows with depth: measured on the
+    /// simulator, 30 bullets flat opens in 1.6s, the *same 30 bullets* nested
+    /// 30 deep never draws at all — tap the row and the app just sits on the
+    /// list. An LLM writing notes is exactly what produces runaway indentation,
+    /// so the note the user can't open is a realistic outcome, not a synthetic
+    /// one. Flattening past `maxLevels` keeps every line and its text; only the
+    /// indent is capped.
+    ///
+    /// ponytail: caps indent, doesn't reflow content. Three levels is what the
+    /// theme styles anyway (solid dot → hollow circle), and DESIGN.md asks for
+    /// progressive nesting, not arbitrary depth.
+    static func clampListDepth(_ markdown: String, maxLevels: Int = 3) -> String {
+        let cap = maxLevels * 2  // cmark counts one level per 2 spaces
+        guard markdown.contains("\n" + String(repeating: " ", count: cap + 1)) else {
+            return markdown  // nothing deep enough to touch
+        }
+        var inFence = false
+        var out: [String] = []
+        for line in markdown.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
+                inFence.toggle()
+                out.append(line)
+                continue
+            }
+            // Code fences are verbatim — reindenting them changes the code.
+            guard !inFence else { out.append(line); continue }
+            let indent = line.prefix { $0 == " " }.count
+            guard indent > cap else { out.append(line); continue }
+            let rest = line.dropFirst(indent)
+            // Only list items get clamped. An over-indented non-list line is an
+            // indented code block by markdown's own rules, so it keeps its
+            // indent or it stops being code.
+            let isItem = rest.hasPrefix("- ") || rest.hasPrefix("* ") || rest.hasPrefix("+ ")
+                || rest.range(of: "^[0-9]+[.)] ", options: .regularExpression) != nil
+            out.append(isItem ? String(repeating: " ", count: cap) + rest : line)
+        }
+        return out.joined(separator: "\n")
+    }
+
+    #if DEBUG
+    /// The clamp must cap runaway nesting without touching the two things that
+    /// depend on deep indentation being preserved: code fences and indented
+    /// code blocks.
+    static func selfCheck() {
+        func maxIndent(_ s: String) -> Int {
+            s.components(separatedBy: "\n").map { $0.prefix { $0 == " " }.count }.max() ?? 0
+        }
+        let deep = (0..<30)
+            .map { String(repeating: "  ", count: $0) + "- level \($0)" }
+            .joined(separator: "\n")
+        assert(maxIndent(clampListDepth(deep)) == 6, "30-deep list must clamp to 3 levels")
+        // Every line survives — clamping is not truncation.
+        assert(clampListDepth(deep).components(separatedBy: "\n").count == 30)
+
+        let shallow = "- a\n  - b\n    - c\n"
+        assert(clampListDepth(shallow) == shallow, "in-budget nesting must be untouched")
+
+        let fenced = "```\n        indented code\n```\n"
+        assert(clampListDepth(fenced) == fenced, "fenced code must stay verbatim")
+        let unterminated = "```swift\n            let x = 1\n"
+        assert(clampListDepth(unterminated) == unterminated, "unterminated fence stays verbatim")
+        let indentedCode = "text\n\n        code block\n"
+        assert(clampListDepth(indentedCode) == indentedCode, "indented code block keeps its indent")
+
+        let ordered = (0..<10)
+            .map { String(repeating: "  ", count: $0) + "1. n\($0)" }
+            .joined(separator: "\n")
+        assert(maxIndent(clampListDepth(ordered)) == 6, "ordered lists clamp too")
+    }
+    #endif
 }
 
 extension MarkdownUI.Theme {
