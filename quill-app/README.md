@@ -29,6 +29,12 @@ Automatic transcription retries are capped at 3 per session, counted in
 shared folder). Past the cap nothing re-queues it at launch; the row's `retry`
 clears the count and starts over.
 
+One unreadable track in a two-track session is survivable — it's logged and the
+other track still produces a transcript. But if *every* track fails there is
+nothing to write, so the session fails properly (marker + attempt count + `ERR`)
+instead of writing an empty transcript and reporting success. A readable file
+that simply contains no speech is still a legitimate zero-segment success.
+
 ## Build & run
 
 ```sh
