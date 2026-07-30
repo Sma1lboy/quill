@@ -19,7 +19,7 @@ struct PopoverView: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
-            SessionList(sessions: state.sessions)
+            SessionList(state: state)
             FooterBar(state: state)
         }
         .frame(width: 292)
@@ -229,74 +229,184 @@ private struct PipelineBanner: View {
 // MARK: - Session list
 
 private struct SessionList: View {
-    let sessions: [SessionSummary]
+    @ObservedObject var state: AppState
+    @State private var query = ""
+    @State private var hits: [TranscriptSearch.Hit] = []
+
+    private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var sessions: [SessionSummary] { state.sessions }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Rectangle().fill(Theme.line).frame(height: 1)
 
-            HStack {
-                Theme.kicker("recent")
-                Spacer()
-                if !sessions.isEmpty {
-                    Text(String(format: "%02d", sessions.count))
-                        .font(Theme.mono(10, .medium))
-                        .foregroundStyle(Theme.muted.opacity(0.7))
-                }
+            HStack(spacing: 8) {
+                Theme.kicker(searching ? "matches" : "recent")
+
+                // Mono field, no rounded system search box — the popover's
+                // grammar is a terminal prompt, so the caret is the affordance.
+                TextField("search transcripts", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(Theme.mono(10.5))
+                    .foregroundStyle(Theme.ink)
+
+                Text(String(format: "%02d", searching ? hits.count : sessions.count))
+                    .font(Theme.mono(10, .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.muted.opacity(0.7))
             }
             .padding(.horizontal, 14)
             .padding(.top, 11)
             .padding(.bottom, 4)
 
-            if sessions.isEmpty {
-                VStack(spacing: 6) {
-                    Text("~/Recordings is empty")
-                        .font(Theme.mono(11))
-                        .foregroundStyle(Theme.muted)
-                    Text("sessions land here as folders you own")
-                        .font(Theme.mono(9.5))
-                        .foregroundStyle(Theme.muted.opacity(0.6))
-                }
-                .frame(maxWidth: .infinity, minHeight: 84)
-                .padding(.bottom, 6)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 1) {
-                        ForEach(sessions) { session in
-                            SessionRow(session: session)
-                        }
+            if searching {
+                if hits.isEmpty {
+                    twoLines("no matches", "transcripts only · notes aren't indexed")
+                } else {
+                    rows(count: hits.count) {
+                        ForEach(hits) { hit in HitRow(hit: hit) }
                     }
-                    .padding(.horizontal, 7)
-                    .padding(.bottom, 7)
                 }
-                .frame(height: min(CGFloat(sessions.count) * 37 + 7, 158))
+            } else if sessions.isEmpty {
+                twoLines("~/Recordings is empty", "sessions land here as folders you own")
+            } else {
+                rows(count: sessions.count) {
+                    ForEach(sessions) { session in
+                        SessionRow(session: session) { state.retry(session) }
+                    }
+                }
             }
         }
+        // Debounced in TranscriptSearch's own task — `.task(id:)` cancels the
+        // in-flight sleep on every keystroke, so only a settled query hits disk.
+        .task(id: query) { await search() }
+    }
+
+    private func rows<Content: View>(
+        count: Int, @ViewBuilder _ content: () -> Content
+    ) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 1, content: content)
+                .padding(.horizontal, 7)
+                .padding(.bottom, 7)
+        }
+        .frame(height: min(CGFloat(count) * 37 + 7, 158))
+    }
+
+    private func twoLines(_ top: String, _ bottom: String) -> some View {
+        VStack(spacing: 6) {
+            Text(top)
+                .font(Theme.mono(11))
+                .foregroundStyle(Theme.muted)
+            Text(bottom)
+                .font(Theme.mono(9.5))
+                .foregroundStyle(Theme.muted.opacity(0.6))
+        }
+        .frame(maxWidth: .infinity, minHeight: 84)
+        .padding(.bottom, 6)
+    }
+
+    private func search() async {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { hits = []; return }
+        try? await Task.sleep(for: .milliseconds(250))
+        guard !Task.isCancelled else { return }
+        // Off the main actor: directory listing + JSON decode per session.
+        let root = state.root
+        let found = await Task.detached { TranscriptSearch.scan(root: root, query: q) }.value
+        guard !Task.isCancelled else { return }
+        hits = found
+    }
+}
+
+/// One transcript match. Clicking opens the same artifact a session row would.
+private struct HitRow: View {
+    let hit: TranscriptSearch.Hit
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 8) {
+                Text("[\(Transcript.clock(hit.startMS))]")
+                    .font(Theme.mono(9, .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.accent.opacity(0.8))
+                    .frame(width: 42, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(hit.sessionTitle)
+                        .font(Theme.mono(9.5))
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
+                    snippet
+                        .font(.system(size: 11))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 34)
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(hovering ? Theme.accentSoft : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .help("Opens \(hit.sessionID)")
+    }
+
+    /// Concatenated Text so the matched run can carry the accent inline.
+    private var snippet: Text {
+        Text(hit.before).foregroundStyle(Theme.ink.opacity(0.85))
+            + Text(hit.match).foregroundStyle(Theme.accent).bold()
+            + Text(hit.after).foregroundStyle(Theme.ink.opacity(0.85))
+    }
+
+    private func open() {
+        let fm = FileManager.default
+        let transcript = hit.dir.appendingPathComponent("transcript.md")
+        NSWorkspace.shared.open(
+            fm.fileExists(atPath: transcript.path) ? transcript : hit.dir
+        )
     }
 }
 
 private struct SessionRow: View {
     let session: SessionSummary
+    let retry: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: open) {
             HStack(spacing: 8) {
                 // Stage as a fixed-width mono tag — terminal column, not an icon.
+                // ERR takes the error slot; terracotta never means "problem".
                 Text(stageTag)
                     .font(Theme.mono(9, .semibold))
                     .tracking(0.5)
-                    .foregroundStyle(session.stage == .structured ? Theme.accent : Theme.muted.opacity(0.75))
+                    .foregroundStyle(tagColor)
                     .frame(width: 34, alignment: .leading)
 
-                Text(title)
+                Text(session.title)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
 
                 Spacer(minLength: 8)
 
-                if let d = session.duration {
+                // Retry replaces the duration on hover — a failed session has
+                // no successful artifact to open, so the row's own click would
+                // just dump the user in a folder.
+                if session.stage == .failed, hovering {
+                    Text("retry")
+                        .font(Theme.mono(10, .semibold))
+                        .foregroundStyle(Theme.accent)
+                        .onTapGesture(perform: retry)
+                } else if let d = session.duration {
                     Text(AppState.format(TimeInterval(d)))
                         .font(Theme.mono(10.5))
                         .monospacedDigit()
@@ -333,26 +443,27 @@ private struct SessionRow: View {
     private var stageTag: String {
         switch session.stage {
         case .recorded: return "AUD"
+        case .failed: return "ERR"
         case .transcribed: return "TXT"
         case .structured: return "NOTE"
+        }
+    }
+
+    private var tagColor: Color {
+        switch session.stage {
+        case .structured: return Theme.accent
+        case .failed: return Theme.error
+        default: return Theme.muted.opacity(0.75)
         }
     }
 
     private var helpText: String {
         switch session.stage {
         case .recorded: return "Audio only — opens the folder"
+        case .failed: return "Transcription failed — see transcribe.log"
         case .transcribed: return "Opens transcript.md"
         case .structured: return "Opens notes.md"
         }
-    }
-
-    private var title: String {
-        guard let started = session.started else { return session.id }
-        let time = started.formatted(date: .omitted, time: .shortened)
-        if Calendar.current.isDateInToday(started) { return "Today \(time)" }
-        if Calendar.current.isDateInYesterday(started) { return "Yesterday \(time)" }
-        let day = started.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
-        return "\(day) · \(time)"
     }
 }
 

@@ -12,6 +12,7 @@ enum QuillAppMain {
 
         #if DEBUG
         WhisperKitEngine.selfCheck()
+        TranscriptSearch.selfCheck()
         #endif
 
         let env = ProcessInfo.processInfo.environment
@@ -190,6 +191,14 @@ final class AppState: ObservableObject {
         sessions = SessionSummary.scan(root: root)
     }
 
+    /// Re-queue a session whose transcription failed. The coordinator clears
+    /// the failure marker when it picks the job up, so the row leaves ERR as
+    /// soon as work starts.
+    func retry(_ session: SessionSummary) {
+        let dir = session.dir
+        Task { [transcription] in await transcription.enqueue(dir) }
+    }
+
     /// Preview-harness only: fake a live recording (no audio engines) so the
     /// recording layout can be screenshotted deterministically.
     func enterPreviewRecording() {
@@ -223,6 +232,7 @@ final class AppState: ObservableObject {
 struct SessionSummary: Identifiable, Equatable {
     enum Stage: Equatable {
         case recorded      // audio only
+        case failed        // transcription threw; transcribe.failed present
         case transcribed   // transcript.json present
         case structured    // notes.md present
     }
@@ -232,6 +242,17 @@ struct SessionSummary: Identifiable, Equatable {
     let started: Date?
     let duration: Int?    // seconds
     let stage: Stage
+
+    /// Row label: relative for the last two days, else weekday + date.
+    /// Shared with search hits so both lists name a session identically.
+    var title: String {
+        guard let started else { return id }
+        let time = started.formatted(date: .omitted, time: .shortened)
+        if Calendar.current.isDateInToday(started) { return "Today \(time)" }
+        if Calendar.current.isDateInYesterday(started) { return "Yesterday \(time)" }
+        let day = started.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+        return "\(day) · \(time)"
+    }
 
     static func scan(root: URL, limit: Int = 20) -> [SessionSummary] {
         let fm = FileManager.default
@@ -253,11 +274,17 @@ struct SessionSummary: Identifiable, Equatable {
                         started = ISO8601DateFormatter().date(from: s)
                     }
                 }
+                // Order matters: a session that failed, was retried, and
+                // succeeded has both marker and transcript — the artifact wins.
                 let stage: Stage
                 if fm.fileExists(atPath: dir.appendingPathComponent("notes.md").path) {
                     stage = .structured
                 } else if fm.fileExists(atPath: dir.appendingPathComponent("transcript.json").path) {
                     stage = .transcribed
+                } else if fm.fileExists(atPath: dir.appendingPathComponent(
+                    TranscriptionCoordinator.failureMarker
+                ).path) {
+                    stage = .failed
                 } else {
                     stage = .recorded
                 }

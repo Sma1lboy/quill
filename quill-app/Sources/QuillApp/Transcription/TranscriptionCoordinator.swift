@@ -15,6 +15,10 @@ actor TranscriptionCoordinator {
         case failed(session: String)
     }
 
+    /// Written into a session folder when its transcription throws, so the
+    /// popover can distinguish "failed" from "not started yet".
+    static let failureMarker = "transcribe.failed"
+
     private var queue: [URL] = []
     private var draining = false
     private var engine: TranscriptionEngine?
@@ -27,11 +31,15 @@ actor TranscriptionCoordinator {
 
     /// Queue a finished session. With transcription disabled in config, the
     /// on_stop hook still fires — it just gets an untranscribed folder.
+    /// Also the retry path: the popover re-enqueues a failed session, so the
+    /// dedup guard lives here rather than at each caller (a double-clicked
+    /// retry would otherwise transcribe the same folder twice).
     func enqueue(_ sessionDir: URL) {
         guard Config.transcriptionEnabled() else {
             runHook(for: sessionDir)
             return
         }
+        guard !queue.contains(sessionDir) else { return }
         queue.append(sessionDir)
         drainIfIdle()
     }
@@ -50,6 +58,11 @@ actor TranscriptionCoordinator {
             .filter {
                 fm.fileExists(atPath: $0.appendingPathComponent("meta.json").path)
                     && !fm.fileExists(atPath: $0.appendingPathComponent("transcript.json").path)
+                    // A folder with no audio has nothing to transcribe. iOS
+                    // creates note folders on open and writes `files: {}` until
+                    // a take lands; without this those queue and fail on every
+                    // launch once the folders are shared with this app.
+                    && ((try? SessionMeta.read(from: $0).tracks.isEmpty) == false)
             }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         for dir in pending where !queue.contains(dir) {
@@ -76,6 +89,11 @@ actor TranscriptionCoordinator {
         while !queue.isEmpty {
             let dir = queue.removeFirst()
             publish(.transcribing(session: dir.lastPathComponent, queued: queue.count))
+            // Clear any previous attempt's marker so a retry that succeeds
+            // doesn't leave the row stuck on ERR.
+            try? FileManager.default.removeItem(
+                at: dir.appendingPathComponent(Self.failureMarker)
+            )
             do {
                 try await transcribe(dir)
                 structureNotes(dir)
@@ -83,6 +101,13 @@ actor TranscriptionCoordinator {
                 runHook(for: dir)
             } catch {
                 log(dir, "transcription failed: \(error)")
+                // Marker so the popover can show ERR instead of a row that
+                // looks identical to never-transcribed. resumePending still
+                // re-queues these at launch — the marker is for the UI, not a
+                // tombstone.
+                try? Data("\(error)\n".utf8).write(
+                    to: dir.appendingPathComponent(Self.failureMarker), options: .atomic
+                )
                 lastFailure = dir.lastPathComponent
                 notifyUser(
                     title: "quill — transcription failed",
@@ -258,7 +283,7 @@ private struct SessionMeta {
 
 /// Canonical transcript. Property names are the JSON schema — this struct
 /// exists to be serialized.
-private struct Transcript: Codable {
+struct Transcript: Codable {
     struct Segment: Codable {
         let speaker: String
         let start_ms: Int
@@ -270,6 +295,12 @@ private struct Transcript: Codable {
     let model: String
     let created_at: String
     let segments: [Segment]
+
+    static func read(from dir: URL) -> Transcript? {
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent("transcript.json"))
+        else { return nil }
+        return try? JSONDecoder().decode(Transcript.self, from: data)
+    }
 
     /// Write transcript.json and render transcript.md. Both writes are atomic
     /// (temp file + rename), so a partially written transcript never exists on
@@ -292,7 +323,7 @@ private struct Transcript: Codable {
         return lines.joined(separator: "\n")
     }
 
-    private static func clock(_ ms: Int) -> String {
+    static func clock(_ ms: Int) -> String {
         let total = ms / 1000
         let h = total / 3600, m = (total % 3600) / 60, s = total % 60
         return h > 0

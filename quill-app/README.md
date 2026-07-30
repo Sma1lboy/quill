@@ -38,7 +38,10 @@ Click the feather in the menu bar:
   breathes with your mic). Record dot morphs into a stop square in place.
 - **Pipeline banner** — shows transcribing / structuring progress.
 - **Session list** — recent recordings with their stage (audio → transcript
-  → notes); click one to open the best artifact available.
+  → notes); click one to open the best artifact available. A session whose
+  transcription failed reads `ERR`; hover it for `retry`.
+- **Search** — type in the field beside the `recent` kicker to search every
+  transcript (case- and accent-insensitive); a hit opens its session.
 
 ## Config (`~/.config/quill/config.json`, all optional)
 
