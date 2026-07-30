@@ -15,6 +15,20 @@ actor TranscriptionCoordinator {
         case failed(session: String)
     }
 
+    enum TranscribeError: Error, CustomStringConvertible {
+        /// No track yielded a transcript, so there is nothing to write.
+        case allTracksFailed([String])
+
+        var description: String {
+            switch self {
+            case .allTracksFailed(let reasons):
+                return reasons.isEmpty
+                    ? "no audio tracks to transcribe"
+                    : "every track failed — \(reasons.joined(separator: "; "))"
+            }
+        }
+    }
+
     /// Written into a session folder when its transcription throws, so the
     /// popover can distinguish "failed" from "not started yet".
     static let failureMarker = "transcribe.failed"
@@ -158,10 +172,19 @@ actor TranscriptionCoordinator {
         let engine = try await preparedEngine(logDir: dir)
 
         var merged: [Transcript.Segment] = []
+        // A per-track failure is survivable only while some other track still
+        // produced a transcript; if every track was skipped there is nothing to
+        // write, and "done — 0 segments" would be indistinguishable from a
+        // genuinely silent recording. Counted rather than inferred from
+        // `merged.isEmpty`, because real silence is a legitimate 0-segment
+        // success and must not be turned into a failure.
+        var transcribed = 0
+        var skips: [String] = []
         for track in meta.tracks {
             let audio = dir.appendingPathComponent(track.file)
             guard FileManager.default.fileExists(atPath: audio.path) else {
                 log(dir, "skipping missing track \(track.file)")
+                skips.append("\(track.file): missing")
                 continue
             }
             log(dir, "transcribing \(track.file) (\(engine.name))")
@@ -172,8 +195,10 @@ actor TranscriptionCoordinator {
                 segments = try await engine.transcribe(audio)
             } catch {
                 log(dir, "skipping \(track.file): \(error)")
+                skips.append("\(track.file): \(error)")
                 continue
             }
+            transcribed += 1
             let offset = TimeInterval(track.offsetMs) / 1000
             merged += segments.map {
                 Transcript.Segment(
@@ -183,6 +208,15 @@ actor TranscriptionCoordinator {
                     text: $0.text
                 )
             }
+        }
+        // Every track failed (or there were none): writing transcript.json here
+        // would mark the session done forever — no retry, no ERR, no notes —
+        // while reporting success. Throw so the failure marker and the attempt
+        // count get written and the row reads ERR, matching iOS, which throws
+        // on unreadable audio before it can reach this point
+        // (Transcriber.swift:181).
+        guard transcribed > 0 else {
+            throw TranscribeError.allTracksFailed(skips)
         }
         merged.sort { $0.start_ms < $1.start_ms }
 
