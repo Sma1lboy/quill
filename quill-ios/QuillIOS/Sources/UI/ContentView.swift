@@ -29,8 +29,12 @@ struct ContentView: View {
                 }
 
                 if state.pipeline != .idle {
-                    PipelineBanner(status: state.pipeline)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    PipelineBanner(
+                        status: state.pipeline,
+                        onRetry: { state.retryTranscription(id: $0) },
+                        onDismiss: { state.acknowledgeFailure() }
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
                 if let error = state.lastError {
@@ -313,6 +317,15 @@ private struct NewNoteButton: View {
 
 private struct PipelineBanner: View {
     let status: AppState.PipelineStatus
+    var onRetry: (String) -> Void = { _ in }
+    var onDismiss: () -> Void = {}
+
+    /// The session this banner is complaining about, when it's a failure.
+    /// Progress states clear themselves; only a failure can strand.
+    private var failedSession: String? {
+        if case .failed(let s) = status { return s }
+        return nil
+    }
 
     var body: some View {
         VStack(spacing: 7) {
@@ -336,6 +349,24 @@ private struct PipelineBanner: View {
                         .monospacedDigit()
                         .foregroundStyle(Theme.accent)
                         .lineLimit(1)
+                }
+                // A failure banner has no way to clear itself: lastFailure is
+                // only reset when the next job starts, so the last session in
+                // the queue leaves this on screen until the app is killed.
+                if let session = failedSession {
+                    Button("retry") { onRetry(session) }
+                        .font(Theme.mono(11, .medium))
+                        .foregroundStyle(Theme.accent)
+                        .buttonStyle(PressableButtonStyle())
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.muted)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                    .accessibilityLabel("Dismiss")
                 }
             }
 

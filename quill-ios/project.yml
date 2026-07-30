@@ -54,7 +54,7 @@ targets:
       properties:
         CFBundleDisplayName: quill
         CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "18174101"
+        CFBundleVersion: "18216333"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -89,7 +89,7 @@ targets:
         # generated from here, so keeping the two literals together is the
         # only place they can be kept in sync.
         CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "18174101"
+        CFBundleVersion: "18216333"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:

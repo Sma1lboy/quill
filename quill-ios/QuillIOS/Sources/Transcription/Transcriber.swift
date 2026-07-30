@@ -63,6 +63,13 @@ actor Transcriber {
         drainIfIdle()
     }
 
+    /// Forget the last failure so a dismissed banner doesn't come back the
+    /// next time the queue drains. The session's own `transcribe_failures`
+    /// is untouched — the row still reads ERR and still offers retry.
+    func clearLastFailure() {
+        lastFailure = nil
+    }
+
     func resumePending(root: URL) {
         #if DEBUG
         Self.selfCheckTracks()

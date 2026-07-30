@@ -247,6 +247,17 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Dismiss the failure banner. `Transcriber.lastFailure` is only cleared
+    /// when a new job starts, so after the last session in the queue fails the
+    /// banner has nothing to clear it — it sits there until the app is killed.
+    /// The row keeps its ERR tag and its retry button, so acknowledging here
+    /// loses nothing: this is the notice, not the state.
+    func acknowledgeFailure() {
+        guard case .failed = pipeline else { return }
+        pipeline = .idle
+        Task { [transcriber] in await transcriber.clearLastFailure() }
+    }
+
     /// Rename a session — stores the title in meta.json, which
     /// `SessionSummary.scan` already reads, so the home list and search rows
     /// both follow. Empty clears it back to the timestamp.
