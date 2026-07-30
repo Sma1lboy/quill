@@ -77,6 +77,7 @@ struct ContentView: View {
         .sheet(isPresented: $showSearch) {
             SearchView(state: state)
         }
+        .quillOnboarding()
         .task { updates.check() }
         .animation(Theme.spring, value: state.isRecording)
         .animation(Theme.spring, value: state.pipeline)
