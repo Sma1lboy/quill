@@ -38,11 +38,12 @@ struct ModelPicker: View {
                                     .font(Theme.mono(8, .semibold))
                                     .tracking(1)
                                     .foregroundStyle(Theme.accent)
+                                    .lineLimit(1)
                             }
                         }
                         Text(model.description)
                             .font(Theme.mono(10))
-                            .foregroundStyle(Theme.muted.opacity(0.8))
+                            .foregroundStyle(Theme.muted)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.leading, 22)
                         // Say it here rather than letting the download die at
@@ -68,6 +69,9 @@ struct ModelPicker: View {
                     .contentShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
                 }
                 .buttonStyle(PressableButtonStyle())
+                // The radio is a stroked circle — a ring at 5pt vs 1.5pt is
+                // the entire selected signal, and VoiceOver read none of it.
+                .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
                 .contextMenu {
                     if downloaded {
                         Button(role: .destructive) {
@@ -89,7 +93,8 @@ struct ModelPicker: View {
             }
             Text("hold a model to delete its download · switch applies to the next recording")
                 .font(Theme.mono(9))
-                .foregroundStyle(Theme.muted.opacity(0.6))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
         }
         // Same grammar as the session delete dialog: lowercase, states the
         // consequence, cancel declared explicitly (the implicit one follows

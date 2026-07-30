@@ -112,7 +112,7 @@ struct DevSection: View {
 
             Text("root: \(root.path)")
                 .font(Theme.mono(8))
-                .foregroundStyle(Theme.muted.opacity(0.5))
+                .foregroundStyle(Theme.muted)
                 .lineLimit(2)
                 .textSelection(.enabled)
         }
@@ -146,7 +146,7 @@ struct DevSection: View {
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.muted.opacity(0.5))
+                    .foregroundStyle(Theme.muted)
             }
             .padding(.horizontal, 10)
             .frame(height: 36)

@@ -54,6 +54,7 @@ struct SettingsView: View {
                         Text(hint)
                             .font(Theme.mono(10))
                             .foregroundStyle(Theme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 2)
                     }
 
@@ -75,6 +76,7 @@ struct SettingsView: View {
                         Text("every session is a folder you own — audio, transcript, images, notes")
                             .font(Theme.mono(10))
                             .foregroundStyle(Theme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 4)
                     }
 
@@ -98,6 +100,11 @@ struct SettingsView: View {
             }
         }
         .tint(Theme.accent)
+        .task {
+            #if DEBUG
+            Theme.selfCheck()
+            #endif
+        }
     }
 
     /// The instructions the on-device LLM gets when structuring notes.
@@ -151,7 +158,7 @@ struct SettingsView: View {
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.muted)
                 Text("record → transcribe → structured notes, all on this phone. no account, no cloud, no subscription — your recordings are folders in Files.")
-                    .font(.system(size: 13))
+                    .font(Theme.face(13))
                     .foregroundStyle(Theme.ink.opacity(0.85))
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -162,6 +169,8 @@ struct SettingsView: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Theme.accentSoft)
             )
+            // Wordmark + tagline + pitch is one identity card, not three stops.
+            .accessibilityElement(children: .combine)
         }
     }
 
@@ -181,6 +190,7 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
             .multilineTextAlignment(.center)
+            .accessibilityElement(children: .combine)
             .padding(.top, 6)
             .padding(.bottom, 12)
         }
@@ -208,12 +218,17 @@ struct SettingsView: View {
             Text(key)
                 .font(Theme.mono(11))
                 .foregroundStyle(Theme.muted)
-                .frame(width: 84, alignment: .leading)
+                // Scales with the glyphs: "recordings" clipped in an 84pt
+                // column as soon as the user asked for larger text.
+                .frame(width: Theme.scaled(84), alignment: .leading)
             Text(value)
                 .font(Theme.mono(11, .medium))
                 .foregroundStyle(Theme.ink)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 1)
+        // "location, Files → quill → Recordings" as one stop, not two.
+        .accessibilityElement(children: .combine)
     }
 
     private var hint: String {

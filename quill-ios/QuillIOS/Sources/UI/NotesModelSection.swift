@@ -18,23 +18,29 @@ struct NotesModelSection: View {
         VStack(alignment: .leading, spacing: 10) {
             // 1 · Apple Intelligence — primary, zero-download.
             VStack(alignment: .leading, spacing: 3) {
+                // Name + state is one fact. READY/UNAVAILABLE carry the
+                // meaning in words, so accent-vs-error stays decoration.
                 HStack(spacing: 8) {
                     Text("apple intelligence")
                         .font(Theme.mono(12, .semibold))
                         .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
                     Spacer()
                     if FoundationModelsEnhance().isAvailable {
                         Text("READY")
                             .font(Theme.mono(8, .semibold))
                             .tracking(1)
                             .foregroundStyle(Theme.accent)
+                            .lineLimit(1)
                     } else {
                         Text("UNAVAILABLE")
                             .font(Theme.mono(8, .semibold))
                             .tracking(1)
                             .foregroundStyle(Theme.error)
+                            .lineLimit(1)
                     }
                 }
+                .accessibilityElement(children: .combine)
                 if let reason = FoundationModelsEnhance.unavailableReason {
                     Text(reason)
                         .font(Theme.mono(10))
@@ -43,7 +49,7 @@ struct NotesModelSection: View {
                 } else {
                     Text("system on-device model · used first")
                         .font(Theme.mono(10))
-                        .foregroundStyle(Theme.muted.opacity(0.7))
+                        .foregroundStyle(Theme.muted)
                 }
             }
 
@@ -62,14 +68,16 @@ struct NotesModelSection: View {
                             .tracking(1)
                             .foregroundStyle(Theme.accent)
                     }
-                    Toggle("", isOn: $llamaEnabled)
+                    // Labelled, not `Toggle("")` — VoiceOver announced a
+                    // switch with no name at all next to two other rows.
+                    Toggle("qwen fallback", isOn: $llamaEnabled)
                         .labelsHidden()
                         .tint(Theme.accent)
                         .scaleEffect(0.8)
                 }
                 Text("runs when apple intelligence can't · ~1 GB download · fully offline")
                     .font(Theme.mono(10))
-                    .foregroundStyle(Theme.muted.opacity(0.7))
+                    .foregroundStyle(Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if llamaEnabled && !LlamaEnhance.isDownloaded {
