@@ -41,7 +41,7 @@ enum ModelCatalog {
             id: "openai_whisper-large-v3_turbo",
             label: "large-v3 turbo",
             bytes: 3_195_115_988,
-            description: "default · most accurate (won the on-device bake-off), ~3s per 8s of audio"
+            description: "default · most accurate (won the on-device bake-off), faster than real time"
         ),
     ]
 

@@ -21,14 +21,29 @@ enum ModelBenchmark {
             .appendingPathComponent("mic.caf")
     }
 
+    /// " (0.38x realtime)" — the ratio any public perf claim should be quoting,
+    /// so nobody has to reconstruct it from a clip that may not exist later.
+    /// Empty when the duration couldn't be read, rather than inventing a ratio.
+    static func realtime(_ compute: TimeInterval, of audioSeconds: Double?) -> String {
+        guard let a = audioSeconds, a > 0 else { return "" }
+        return String(format: " (%.2fx realtime)", compute / a)
+    }
+
     static func run(root: URL, progress: @escaping @Sendable (String) -> Void) async {
         guard let audio = latestAudio(root: root) else {
             progress("benchmark: no audio found")
             return
         }
 
+        // Without the clip's length the transcribe times below are unauditable:
+        // "3.0s" only means something against "3.0s of what". The clip the first
+        // bake-off ran on is already gone, which retroactively cost us the
+        // "~3s per 8s of audio" figure quoted in README.md and the landing page.
+        let audioSeconds = (try? await AVURLAsset(url: audio).load(.duration))
+            .map { CMTimeGetSeconds($0) }
         var report = ["# whisper model bake-off", "",
-                      "audio: \(audio.deletingLastPathComponent().lastPathComponent)/mic.caf", ""]
+                      "audio: \(audio.deletingLastPathComponent().lastPathComponent)/mic.caf",
+                      "duration: \(audioSeconds.map { String(format: "%.1fs", $0) } ?? "unknown")", ""]
 
         for model in ModelCatalog.models {
             progress("benchmark: \(model.label) — downloading/loading")
@@ -67,7 +82,8 @@ enum ModelBenchmark {
                     "## \(model.label) (\(model.id))",
                     "",
                     "- load: \(String(format: "%.1f", loaded.timeIntervalSince(t0)))s (incl. download if any)",
-                    "- transcribe: \(String(format: "%.1f", done.timeIntervalSince(tTranscribe)))s",
+                    "- transcribe: \(String(format: "%.1f", done.timeIntervalSince(tTranscribe)))s"
+                        + realtime(done.timeIntervalSince(tTranscribe), of: audioSeconds),
                     "- language: \(language ?? "?")",
                     "",
                     "> \(text)",

@@ -15,8 +15,8 @@ no subscription — every session is a folder you own in Files.
 ## Why it's fast and cheap
 
 - **Everything on-device**: Whisper large-v3 turbo via Core ML on the
-  Neural Engine (~3s per 8s of audio), Apple's system LLM for notes —
-  zero API cost, zero audio leaving the phone.
+  Neural Engine, Apple's system LLM for notes — zero API cost, zero audio
+  leaving the phone.
 - **Concurrent by budget**: decode workers scale to the memory actually
   available (`os_proc_available_memory`-driven), so long files parallelize
   without jetsam.
