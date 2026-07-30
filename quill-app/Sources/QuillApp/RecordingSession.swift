@@ -148,7 +148,12 @@ final class RecordingSession {
             withJSONObject: meta,
             options: [.prettyPrinted, .sortedKeys]
         ) {
-            try? data.write(to: dir.appendingPathComponent("meta.json"))
+            // .atomic like every other meta.json writer in both apps: this one
+            // runs at `stop()`, including from applicationWillTerminate during
+            // logout/restart, so it is the write most likely to be interrupted.
+            // A truncated meta.json hides the session from SessionSummary.scan
+            // *and* resumePending — the recording is on disk and invisible.
+            try? data.write(to: dir.appendingPathComponent("meta.json"), options: .atomic)
         }
     }
 }
