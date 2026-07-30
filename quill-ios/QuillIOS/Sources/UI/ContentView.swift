@@ -116,9 +116,10 @@ private struct Header: View {
                 .transition(.opacity)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Recording in progress")
-            } else {
-                Theme.kicker("local · 100 languages")
             }
+            // Nothing at rest: "local · 100 languages" is a pitch for the
+            // landing page, not a label the app owes someone who already
+            // installed it. The header's job is the wordmark and ● REC.
 
             // The icon pair sits in its own group — their 32pt frames are the
             // separation, so no extra spacing eats the kicker on a small phone.

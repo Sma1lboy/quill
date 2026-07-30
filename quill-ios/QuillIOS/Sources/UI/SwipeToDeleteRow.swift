@@ -13,8 +13,12 @@ struct SwipeToDeleteRow<Content: View>: View {
 
     /// Revealed action width.
     private let actionWidth: CGFloat = 76
-    /// Dragging past this fraction of the row width = commit intent.
-    private let flingFraction: CGFloat = 0.55
+    /// Past this offset a release deletes outright. Must sit inside the
+    /// rubber-band's reachable range: the band asymptotes around -138pt, so
+    /// anything near that can never be hit and the gesture silently degrades
+    /// to velocity-only — which is how a quick flick used to delete a row the
+    /// user had barely moved.
+    private let flingCommit: CGFloat = 108
 
     @State private var offset: CGFloat = 0
     @State private var open = false
@@ -37,7 +41,10 @@ struct SwipeToDeleteRow<Content: View>: View {
     }
 
     var body: some View {
-        content()
+        #if DEBUG
+        Self.selfCheck()
+        #endif
+        return content()
             .offset(x: offset)
             .background(alignment: .trailing) {
                 if offset < 0 {
@@ -84,8 +91,13 @@ struct SwipeToDeleteRow<Content: View>: View {
             }
             .onEnded { value in
                 let velocity = value.velocity.width
-                // Fling far left = delete outright.
-                if -offset > 240 * flingFraction || velocity < -1200 {
+                // Delete outright only on a deliberate long swipe. Distance is
+                // required — a fast flick can clear 1200pt/s in 30pt of travel,
+                // so velocity alone deleted rows the user had barely moved, and
+                // the old distance test was unreachable behind the rubber-band,
+                // leaving velocity to decide everything. Velocity can still
+                // lower the bar for a committed swipe, never replace it.
+                if Self.shouldFling(offset: offset, velocity: velocity, commit: flingCommit) {
                     commitDelete()
                     return
                 }
@@ -95,6 +107,31 @@ struct SwipeToDeleteRow<Content: View>: View {
                 snap(to: shouldOpen ? -actionWidth : 0)
             }
     }
+
+    /// Fling-to-delete: past `commit`, or past 80% of it while still moving
+    /// left fast. Pure, so the thresholds can be checked without a gesture.
+    static func shouldFling(offset: CGFloat, velocity: CGFloat, commit: CGFloat) -> Bool {
+        if -offset >= commit { return true }
+        return -offset >= commit * 0.8 && velocity < -900
+    }
+
+    #if DEBUG
+    /// Both directions matter: too eager and a flick deletes a row the user
+    /// only meant to peek at, too strict and the fling gesture is dead.
+    static func selfCheck() {
+        let c: CGFloat = 108
+        // The bug: a fast flick with almost no travel must NOT delete.
+        assert(!shouldFling(offset: -30, velocity: -2400, commit: c))
+        assert(!shouldFling(offset: -76, velocity: -3000, commit: c))  // parked at rest width
+        // A deliberate long swipe still deletes.
+        assert(shouldFling(offset: -110, velocity: 0, commit: c))
+        assert(shouldFling(offset: -90, velocity: -1200, commit: c))   // near-commit + moving
+        // Near-commit but slowing to a stop should just open, not delete.
+        assert(!shouldFling(offset: -90, velocity: -200, commit: c))
+        // A rightward release never deletes.
+        assert(!shouldFling(offset: -100, velocity: 2000, commit: c))
+    }
+    #endif
 
     private func snap(to target: CGFloat) {
         withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
