@@ -37,6 +37,10 @@ struct ContentView: View {
                     Text(error)
                         .font(Theme.mono(12))
                         .foregroundStyle(Theme.error)
+                        // "storage full — audio is no longer being saved" is
+                        // the one message a user must not miss, and it was
+                        // free to wrap off the right edge at any text size.
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 20)
                         .padding(.top, 10)

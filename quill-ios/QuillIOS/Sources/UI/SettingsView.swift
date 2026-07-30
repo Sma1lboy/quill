@@ -53,7 +53,7 @@ struct SettingsView: View {
                         )
                         Text(hint)
                             .font(Theme.mono(10))
-                            .foregroundStyle(Theme.muted.opacity(0.7))
+                            .foregroundStyle(Theme.muted)
                             .padding(.top, 2)
                     }
 
@@ -74,7 +74,7 @@ struct SettingsView: View {
                         factLine("location", "Files → quill → Recordings")
                         Text("every session is a folder you own — audio, transcript, images, notes")
                             .font(Theme.mono(10))
-                            .foregroundStyle(Theme.muted.opacity(0.7))
+                            .foregroundStyle(Theme.muted)
                             .padding(.top, 4)
                     }
 
@@ -126,7 +126,7 @@ struct SettingsView: View {
                 HStack {
                     Text(custom.isEmpty ? "default prompt" : "custom prompt")
                         .font(Theme.mono(9))
-                        .foregroundStyle(Theme.muted.opacity(0.6))
+                        .foregroundStyle(Theme.muted)
                     Spacer()
                     if !custom.isEmpty {
                         Button("reset to default") { custom = "" }
@@ -137,7 +137,7 @@ struct SettingsView: View {
                 }
                 Text("applies to the next recording · re-run per session from its screen")
                     .font(Theme.mono(9))
-                    .foregroundStyle(Theme.muted.opacity(0.6))
+                    .foregroundStyle(Theme.muted)
             }
         }
     }
@@ -174,10 +174,10 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.muted)
                 Text("whisperkit + apple foundation models · on-device")
                     .font(Theme.mono(9))
-                    .foregroundStyle(Theme.muted.opacity(0.6))
+                    .foregroundStyle(Theme.muted)
                 Text("made by jackson · sibling of [ kobe ]")
                     .font(Theme.mono(9))
-                    .foregroundStyle(Theme.muted.opacity(0.6))
+                    .foregroundStyle(Theme.muted)
             }
             .frame(maxWidth: .infinity, alignment: .center)
             .multilineTextAlignment(.center)
@@ -254,14 +254,22 @@ private struct FlowLayoutChips: View {
                     Text(option.label)
                         .font(Theme.mono(11, .medium))
                         .foregroundStyle(active ? Theme.paper : Theme.ink)
+                        .lineLimit(1)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(
                             Capsule(style: .continuous)
                                 .fill(active ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.inset))
                         )
+                        // ~21pt tall visually; the chips are a dense wrapping
+                        // grid where growing the visual size would break the
+                        // layout, so the hit area grows instead.
+                        .contentShape(Capsule(style: .continuous).inset(by: -11))
                 }
                 .buttonStyle(PressableButtonStyle())
+                // Selected-vs-not was terracotta fill and nothing else —
+                // invisible to VoiceOver and to a colorblind user.
+                .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
             }
         }
     }

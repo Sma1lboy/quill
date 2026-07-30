@@ -66,7 +66,8 @@ struct SearchView: View {
                         Text(String(format: "%02d", hits.count))
                             .font(Theme.mono(11, .medium))
                             .monospacedDigit()
-                            .foregroundStyle(Theme.muted.opacity(0.7))
+                            .foregroundStyle(Theme.muted)
+                            .accessibilityLabel("\(hits.count) matches")
                     }
                     .padding(.horizontal, 8)
                     .padding(.bottom, 2)
@@ -92,10 +93,14 @@ struct SearchView: View {
                 .foregroundStyle(Theme.muted)
             Text(bottom)
                 .font(Theme.mono(11))
-                .foregroundStyle(Theme.muted.opacity(0.6))
+                .foregroundStyle(Theme.muted)
         }
+        .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.top, 48)
+        // "no matches / transcripts only · notes aren't indexed" is one
+        // thought, and it's the whole screen — one VoiceOver stop, not two.
+        .accessibilityElement(children: .combine)
     }
 
     /// Debounced scan: `.task(id:)` cancels the in-flight sleep on every
@@ -124,28 +129,45 @@ struct SearchView: View {
 private struct HitRow: View {
     let hit: TranscriptSearch.Hit
 
+    /// Offset into the recording, in words rather than a mono clock.
+    private var spokenStart: String {
+        Duration.milliseconds(hit.startMS).formatted(
+            .units(allowed: [.hours, .minutes, .seconds], width: .wide)
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text(hit.sessionTitle)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(Theme.face(13, .medium))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 Text("[\(Transcript.clock(hit.startMS))]")
                     .font(Theme.mono(10, .semibold))
                     .monospacedDigit()
-                    .foregroundStyle(Theme.accent.opacity(0.8))
+                    // accent@0.8 was 2.77:1 on surface (light) — under AA even
+                    // for large text, and this is 10pt.
+                    .foregroundStyle(Theme.accent)
+                    .lineLimit(1)
             }
             snippet
-                .font(.system(size: 14))
+                .font(Theme.face(14))
                 .lineSpacing(2)
-                .lineLimit(2)
+                .lineLimit(3)
                 .multilineTextAlignment(.leading)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Title + timestamp + snippet is one search result. Read separately,
+        // the timestamp arrives as "bracket one colon two three bracket" and
+        // the snippet splits into three fragments at the match boundaries.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(hit.sessionTitle), at \(spokenStart), \(hit.before)\(hit.match)\(hit.after)"
+        )
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Theme.surface)

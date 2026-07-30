@@ -216,6 +216,17 @@ extension Transcript {
 struct PlaybackBar: View {
     @ObservedObject var model: PlaybackModel
 
+    /// "1:23 of 4:56" spoken as words — the mono clocks read as
+    /// "one colon two three" digit by digit otherwise.
+    private var spokenPosition: String {
+        func words(_ t: TimeInterval) -> String {
+            Duration.seconds(Int(t)).formatted(
+                .units(allowed: [.hours, .minutes, .seconds], width: .wide)
+            )
+        }
+        return "\(words(model.position)) of \(words(model.duration))"
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             Button(action: { model.toggle() }) {
@@ -230,17 +241,25 @@ struct PlaybackBar: View {
                 }
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(Theme.accent))
+                // 34pt visual, 44pt hit area — the design keeps its small
+                // round button, the thumb gets Apple's minimum.
+                .contentShape(Circle().inset(by: -5))
             }
             .buttonStyle(PressableButtonStyle())
             .disabled(model.isLoading || model.blockedByRecording)
             .opacity(model.blockedByRecording ? 0.45 : 1)
             .accessibilityLabel(model.isPlaying ? "Pause playback" : "Play recording")
+            // Greyed-out-because-recording is conveyed only by 45% opacity;
+            // VoiceOver otherwise just says "dimmed" with no reason.
+            .accessibilityHint(model.blockedByRecording ? "Unavailable while recording" : "")
 
             Text(AppState.format(model.position))
                 .font(Theme.mono(11, .medium))
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .foregroundStyle(Theme.ink)
+                .lineLimit(1)
+                .accessibilityHidden(true) // spoken as the scrubber's value
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -262,14 +281,31 @@ struct PlaybackBar: View {
                 )
             }
             .frame(height: 24)
+            // A drag-only capsule is invisible to VoiceOver: no trait, no
+            // value, and swipe-to-adjust does nothing. The adjustable trait
+            // makes it a real scrubber — swipe up/down seeks in 5% steps.
+            .accessibilityElement()
+            .accessibilityLabel("Playback position")
+            .accessibilityValue(spokenPosition)
+            .accessibilityAdjustableAction { direction in
+                guard model.duration > 0 else { return }
+                let step = model.duration * 0.05
+                switch direction {
+                case .increment: model.scrub(fraction: (model.position + step) / model.duration)
+                case .decrement: model.scrub(fraction: (model.position - step) / model.duration)
+                @unknown default: break
+                }
+            }
 
             Text(AppState.format(model.duration))
                 .font(Theme.mono(11))
                 .monospacedDigit()
                 .foregroundStyle(Theme.muted)
+                .lineLimit(1)
+                .accessibilityHidden(true) // spoken as the scrubber's value
         }
         .padding(.horizontal, 12)
-        .frame(height: 52)
+        .frame(minHeight: 52)
         .background(
             RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
                 .fill(Theme.surface)
