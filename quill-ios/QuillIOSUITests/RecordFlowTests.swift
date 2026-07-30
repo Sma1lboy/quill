@@ -1,5 +1,15 @@
 import XCTest
 
+extension XCUIApplication {
+    /// Every test here drives the app itself, never the first-run page — a
+    /// full-screen cover on a fresh install makes all of them fail on a
+    /// non-hittable button. One launcher instead of an env dict per test.
+    func launchPastOnboarding() {
+        launchEnvironment["QUILL_SKIP_ONBOARDING"] = "1"
+        launch()
+    }
+}
+
 /// Drives the real app on a physical device: quick take → record ~8s of
 /// whatever the mic hears → stop. Transcription then runs in-app; the test
 /// waits for the pipeline banner to clear so the transcript lands on disk.
@@ -20,7 +30,7 @@ final class RecordFlowTests: XCTestCase {
             return false
         }
 
-        app.launch()
+        app.launchPastOnboarding()
 
         let record = app.buttons["Start recording"]
         XCTAssertTrue(record.waitForExistence(timeout: 10), "record bar not found")
@@ -60,7 +70,7 @@ final class DetailOpenTests: XCTestCase {
     @MainActor
     func testOpenFirstSessionDetail() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         // Tap the first session row (they're buttons inside the scroll view).
         let row = app.buttons.matching(
             NSPredicate(format: "label CONTAINS 'Today' OR label CONTAINS 'Yesterday'")
@@ -78,7 +88,7 @@ final class SearchTests: XCTestCase {
     @MainActor
     func testSearchSheetAcceptsQuery() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         let search = app.buttons["Search"]
         XCTAssertTrue(search.waitForExistence(timeout: 8), "search button not in header")
         search.tap()
@@ -95,11 +105,50 @@ final class SearchTests: XCTestCase {
     }
 }
 
+/// The actions menu opens and the delete dialog asks before deleting.
+/// Running this in Debug also trips `SessionActions.selfCheck()`, so broken
+/// rename/zip logic asserts here.
+final class SessionActionsTests: XCTestCase {
+    @MainActor
+    func testDeleteAsksForConfirmation() throws {
+        let app = XCUIApplication()
+        app.launchPastOnboarding()
+        let row = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'Today' OR label CONTAINS 'Yesterday' OR label CONTAINS 'Jul'")
+        ).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 8), "no session row")
+        row.tap()
+
+        let menu = app.buttons["Session actions"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5), "actions menu not in toolbar")
+        menu.tap()
+        XCTAssertTrue(app.buttons["rename"].waitForExistence(timeout: 3), "rename missing")
+        XCTAssertTrue(app.buttons["share folder"].exists, "share folder missing")
+
+        app.buttons["delete"].firstMatch.tap()
+        // The dialog must appear rather than the session vanishing.
+        XCTAssertTrue(
+            app.staticTexts["delete this session?"].waitForExistence(timeout: 3),
+            "delete ran without confirmation"
+        )
+        // Back out — this test must not destroy the library it ran against.
+        // The dialog is an action sheet, so its buttons aren't in app.buttons;
+        // if the tap can't be found, kill the app rather than risk confirming.
+        let cancel = app.sheets.buttons["cancel"].firstMatch
+        if cancel.waitForExistence(timeout: 2) {
+            cancel.tap()
+            XCTAssertTrue(app.state == .runningForeground, "app crashed during session actions")
+        } else {
+            app.terminate()
+        }
+    }
+}
+
 final class EnhanceErrorProbe: XCTestCase {
     @MainActor
     func testReadEnhanceError() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         let row = app.buttons.matching(
             NSPredicate(format: "label CONTAINS 'Today' OR label CONTAINS 'Yesterday' OR label CONTAINS 'Jul'")
         ).firstMatch
@@ -122,7 +171,7 @@ final class SettingsProbe: XCTestCase {
     @MainActor
     func testInspectNotesModelSection() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         app.buttons["Settings"].firstMatch.tap()
         sleep(2)
         // scroll to notes model section
@@ -164,7 +213,7 @@ final class NotesGenProbe: XCTestCase {
     @MainActor
     func testGenerateNotesOnLongSession() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         // open the 20-min session (has 20:00 duration label)
         let row = app.buttons.matching(
             NSPredicate(format: "label CONTAINS '20:00'")
@@ -195,7 +244,7 @@ final class TitleProbe: XCTestCase {
     @MainActor
     func testHomeShowsGeneratedTitle() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         sleep(2)
         for i in 0..<min(app.buttons.count, 30) {
             let t = app.buttons.element(boundBy: i).label
@@ -214,7 +263,7 @@ final class AICapProbe: XCTestCase {
     @MainActor
     func testReadAICapabilities() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         app.buttons["Settings"].firstMatch.tap()
         sleep(1)
         app.swipeUp(); app.swipeUp()
@@ -230,7 +279,7 @@ final class AICapProbe2: XCTestCase {
     @MainActor
     func testReadFullCapabilities() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         app.buttons["Settings"].firstMatch.tap()
         sleep(1)
         for _ in 0..<4 { app.swipeUp() }
@@ -248,7 +297,7 @@ final class RegenNotesProbe: XCTestCase {
     @MainActor
     func testRegenerateWithNewPrompt() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         let row = app.buttons.matching(NSPredicate(format: "label CONTAINS '20:00'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 8))
         row.tap()
@@ -269,7 +318,7 @@ final class ScreenshotDriver: XCTestCase {
     @MainActor
     func testHoldDetailOpen() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         let row = app.buttons.matching(NSPredicate(format: "label CONTAINS 'nvidia'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 8))
         row.tap()
@@ -278,7 +327,7 @@ final class ScreenshotDriver: XCTestCase {
     @MainActor
     func testHoldSettingsOpen() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         app.buttons["Settings"].firstMatch.tap()
         sleep(25)
     }
@@ -288,7 +337,7 @@ final class ScreenshotDriver2: XCTestCase {
     @MainActor
     func testHoldTranscriptOpen() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         let row = app.buttons.matching(NSPredicate(format: "label CONTAINS 'nvidia'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 8))
         row.tap()
@@ -309,14 +358,14 @@ final class ScreenshotDriver3: XCTestCase {
     @MainActor
     func testHoldNoteControlsOpen() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         app.buttons["New note"].firstMatch.tap()
         sleep(24)
     }
     @MainActor
     func testHoldSettingsScrolled() throws {
         let app = XCUIApplication()
-        app.launch()
+        app.launchPastOnboarding()
         app.buttons["Settings"].firstMatch.tap()
         sleep(1)
         app.swipeUp(); app.swipeUp()

@@ -50,6 +50,11 @@ struct SessionDetailView: View {
         if case .transcribing(let s, _, let p) = state.pipeline, s == id, p > 0 { return p }
         return nil
     }
+    /// Segment the playhead is inside, or nil when stopped.
+    private var playingSegment: Int? {
+        guard playback.isPlaying, let transcript else { return nil }
+        return Transcript.segmentIndex(at: playback.position, in: transcript.segments)
+    }
 
     var body: some View {
         // quill is a note-taker: notes.md is the product. The pipeline
@@ -110,6 +115,10 @@ struct SessionDetailView: View {
                         LazyVStack(alignment: .leading, spacing: 16) {
                             ForEach(transcript.segments.indices, id: \.self) { i in
                                 let seg = transcript.segments[i]
+                                // One wash, two reasons: the search hit stays
+                                // marked after the jump, and the segment being
+                                // played marks itself as the playhead moves.
+                                let marked = i == scrollToSegment || i == playingSegment
                                 VStack(alignment: .leading, spacing: 2) {
                                     // Timestamp doubles as a seek button.
                                     Button {
@@ -122,22 +131,20 @@ struct SessionDetailView: View {
                                     .buttonStyle(.plain)
                                     Text(seg.text)
                                         .font(.system(size: 14))
-                                        .foregroundStyle(
-                                            Theme.ink.opacity(i == scrollToSegment ? 1 : 0.85)
-                                        )
+                                        .foregroundStyle(Theme.ink.opacity(marked ? 1 : 0.85))
                                         .lineSpacing(3)
                                         .textSelection(.enabled)
                                 }
-                                .padding(.horizontal, i == scrollToSegment ? 8 : 0)
-                                .padding(.vertical, i == scrollToSegment ? 6 : 0)
+                                .padding(.horizontal, marked ? 8 : 0)
+                                .padding(.vertical, marked ? 6 : 0)
                                 .background(
-                                    // The search hit stays marked after the jump.
                                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .fill(i == scrollToSegment ? Theme.accentSoft : .clear)
+                                        .fill(marked ? Theme.accentSoft : .clear)
                                 )
                                 .id(i)
                             }
                         }
+                        .animation(Theme.spring, value: playingSegment)
                         .padding(.top, 12)
                     } label: {
                         HStack(spacing: 6) {
@@ -239,6 +246,10 @@ struct SessionDetailView: View {
                 state.deleteSession(id: id)
                 dismiss()
             }
+            // Declared rather than left to SwiftUI's implicit one: the rename
+            // alert already says "cancel" in quill's voice, and the automatic
+            // button follows the system language instead.
+            Button("cancel", role: .cancel) {}
         } message: {
             Text("the folder moves to .trash — recoverable from Files for 7 days")
         }
@@ -272,6 +283,12 @@ struct SessionDetailView: View {
         }
         .onAppear { reload() }
         .onDisappear { playback.teardown() }
+        // Recording (this session or another) owns AVAudioSession as
+        // .playAndRecord; playback flipping it to .playback would kill the
+        // mic mid-take, so playback stands down while any take is live.
+        .onChange(of: state.isRecording, initial: true) { _, recording in
+            playback.setRecording(recording)
+        }
         .onChange(of: pickerItems) { _, items in
             guard !items.isEmpty else { return }
             Task { await importImages(items) }

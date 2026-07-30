@@ -17,6 +17,11 @@ struct RecordingActivityAttributes: ActivityAttributes {
         /// Text(timerInterval:) without per-second pushes.
         var startedAt: Date
         var isPaused: Bool
+        /// When paused, the instant capture stopped. Both ends of the frozen
+        /// elapsed span must be stored dates: the system re-renders a Live
+        /// Activity whenever it likes, and a `Date()` read at render time
+        /// made the paused clock keep climbing.
+        var pausedAt: Date?
         /// Recording: 0…1 coarse mic level (~1 Hz) for the waveform.
         var level: Double
         /// Transcribing: 0…1 slice progress; drives the percentage.

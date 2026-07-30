@@ -34,12 +34,7 @@ struct RecordingLiveActivity: Widget {
                         .font(W.mono(13))
                         .foregroundStyle(W.inkDark.opacity(0.8))
                     Spacer()
-                    if context.state.progress > 0 {
-                        Text("\(Int(context.state.progress * 100))%")
-                            .font(W.mono(22, .semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(W.inkDark)
-                    }
+                    PercentText(progress: context.state.progress, size: 22, tint: W.inkDark)
                 }
             }
             .padding(.horizontal, 18)
@@ -57,11 +52,8 @@ struct RecordingLiveActivity: Widget {
                     Group {
                         if context.state.phase == .recording {
                             ElapsedTimer(state: context.state, size: 18, tint: W.inkDark)
-                        } else if context.state.progress > 0 {
-                            Text("\(Int(context.state.progress * 100))%")
-                                .font(W.mono(18, .semibold))
-                                .monospacedDigit()
-                                .foregroundStyle(W.inkDark)
+                        } else {
+                            PercentText(progress: context.state.progress, size: 18, tint: W.inkDark)
                         }
                     }
                     .padding(.trailing, 4)
@@ -84,11 +76,8 @@ struct RecordingLiveActivity: Widget {
                 Group {
                     if context.state.phase == .recording {
                         ElapsedTimer(state: context.state, size: 12, tint: W.accent)
-                    } else if context.state.progress > 0 {
-                        Text("\(Int(context.state.progress * 100))%")
-                            .font(W.mono(12, .semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(W.accent)
+                    } else {
+                        PercentText(progress: context.state.progress, size: 12, tint: W.accent)
                     }
                 }
                 .frame(maxWidth: 44)
@@ -123,6 +112,23 @@ private struct PhaseGlyph: View {
     }
 }
 
+/// Transcription percentage. The first slice checkpoint can be a minute out
+/// on a long take, so 0 renders as an em-dash rather than a blank column —
+/// an empty compact trailing looked like the activity had died.
+private struct PercentText: View {
+    let progress: Double
+    var size: CGFloat
+    var tint: Color
+
+    var body: some View {
+        Text(progress > 0 ? "\(Int(progress * 100))%" : "—")
+            .font(W.mono(size, .semibold))
+            .monospacedDigit()
+            .contentTransition(.numericText())
+            .foregroundStyle(tint)
+    }
+}
+
 private struct ElapsedTimer: View {
     let state: RecordingActivityAttributes.ContentState
     var size: CGFloat
@@ -131,8 +137,10 @@ private struct ElapsedTimer: View {
     var body: some View {
         Group {
             if state.isPaused {
-                Text(Duration.seconds(Date().timeIntervalSince(state.startedAt))
-                    .formatted(.time(pattern: .minuteSecond)))
+                // Frozen span between two stored dates — see ContentState.pausedAt.
+                Text(Duration.seconds(
+                    (state.pausedAt ?? state.startedAt).timeIntervalSince(state.startedAt)
+                ).formatted(.time(pattern: .minuteSecond)))
             } else {
                 Text(timerInterval: state.startedAt...Date(timeIntervalSinceNow: 3600 * 12),
                      countsDown: false)

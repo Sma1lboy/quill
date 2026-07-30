@@ -155,10 +155,17 @@ final class AppState: ObservableObject {
         isPaused = false
         recordingID = nil
         micLevel = 0
-        liveActivity.stop()
         refreshSessions()
 
         let dir = session.dir
+        // Hand the card straight to the transcribing phase when there's audio
+        // to transcribe — ending it here and re-requesting fails outright if
+        // the app is backgrounded by then (Activity.request needs foreground).
+        liveActivity.recordingStopped(
+            willTranscribe: FileManager.default.fileExists(
+                atPath: dir.appendingPathComponent("mic.caf").path
+            )
+        )
         Task { [transcriber] in await transcriber.enqueue(dir) }
     }
 
@@ -182,7 +189,7 @@ final class AppState: ObservableObject {
         elapsed = session.elapsed
         micLevel = session.micLevel
         if !isPaused {
-            liveActivity.level(micLevel, elapsed: elapsed)
+            liveActivity.level(micLevel)
         }
     }
 

@@ -13,15 +13,30 @@ final class PlaybackModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying = false
     @Published private(set) var isLoading = false
     @Published var position: TimeInterval = 0
-    private(set) var duration: TimeInterval = 0
+    @Published private(set) var duration: TimeInterval = 0
 
     private var player: AVAudioPlayer?
     private var ticker: Timer?
     /// Seek requested before the player finished loading.
     private var pendingSeek: TimeInterval?
+    /// We activated the shared session and owe a deactivate on teardown.
+    private var activated = false
+    /// Some session is recording. A take owns AVAudioSession as
+    /// `.playAndRecord`; flipping it to `.playback` would kill the mic, so
+    /// playback stands down for the duration. Driven from the view.
+    @Published private(set) var blockedByRecording = false
+
+    /// Playback and recording share one AVAudioSession — recording wins.
+    func setRecording(_ recording: Bool) {
+        blockedByRecording = recording
+        if recording { pause() }
+    }
 
     func load(_ url: URL) {
         guard player == nil, !isLoading else { return }
+        #if DEBUG
+        Self.selfCheck()
+        #endif
         isLoading = true
         Task.detached(priority: .userInitiated) {
             let p = try? AVAudioPlayer(contentsOf: url)
@@ -41,11 +56,9 @@ final class PlaybackModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func toggle() {
-        guard let player else { return }
+        guard let player, !blockedByRecording else { return }
         if isPlaying {
-            player.pause()
-            stopTicker()
-            isPlaying = false
+            pause()
         } else {
             isPlaying = true // optimistic; corrected below if start fails
             startTicker()
@@ -55,14 +68,27 @@ final class PlaybackModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
                 try? AVAudioSession.sharedInstance().setActive(true)
                 let ok = player.play()
-                if !ok {
-                    await MainActor.run { [weak self] in
-                        self?.isPlaying = false
-                        self?.stopTicker()
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.activated = true
+                    if ok {
+                        self.observeInterruptions()
+                    } else {
+                        self.isPlaying = false
+                        self.stopTicker()
                     }
                 }
             }
         }
+    }
+
+    /// Single stop-playing path — interruptions, the pause button, a new
+    /// recording, and view teardown all route through here.
+    func pause() {
+        guard isPlaying else { return }
+        player?.pause()
+        stopTicker()
+        isPlaying = false
     }
 
     func seek(to seconds: TimeInterval) {
@@ -70,14 +96,14 @@ final class PlaybackModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             pendingSeek = seconds // honor the tap once loading finishes
             return
         }
-        player.currentTime = min(max(0, seconds), max(0, duration - 0.1))
+        player.currentTime = Self.clamp(seconds, duration: duration)
         position = player.currentTime
         if !isPlaying { toggle() }
     }
 
     func scrub(fraction: Double) {
         guard let player, duration > 0 else { return }
-        player.currentTime = duration * min(max(0, fraction), 1)
+        player.currentTime = Self.clamp(duration * fraction, duration: duration)
         position = player.currentTime
     }
 
@@ -87,9 +113,57 @@ final class PlaybackModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         player = nil
         isPlaying = false
         position = 0
+        duration = 0
+        pendingSeek = nil
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+            self.observer = nil
+        }
+        if activated {
+            activated = false
+            // Hand the session back so the mic (and other apps' audio) can
+            // have it — playback holding .playback blocks the next take.
+            Task.detached {
+                try? AVAudioSession.sharedInstance()
+                    .setActive(false, options: .notifyOthersOnDeactivation)
+            }
+        }
+    }
+
+    /// Both ends of the scrubbable range, in one place: never past the last
+    /// 100ms (AVAudioPlayer treats currentTime == duration as finished).
+    static func clamp(_ seconds: TimeInterval, duration: TimeInterval) -> TimeInterval {
+        min(max(0, seconds), max(0, duration - 0.1))
+    }
+
+    /// Unplugged headphones / a phone call must stop playback, not leave a
+    /// silent bar claiming to play. `.began` is the only case that matters —
+    /// quill doesn't auto-resume.
+    private func observeInterruptions() {
+        guard observer == nil else { return }
+        observer = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { note in
+            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  AVAudioSession.InterruptionType(rawValue: raw) == .began else { return }
+            Task { @MainActor [weak self] in self?.pause() }
+        }
+    }
+
+    private var observer: NSObjectProtocol?
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in
+            isPlaying = false
+            position = 0
+            stopTicker()
+        }
     }
 
     private func startTicker() {
+        stopTicker()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, let player = self.player else { return }
@@ -103,12 +177,38 @@ final class PlaybackModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         ticker = nil
     }
 
-    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in
-            isPlaying = false
-            position = 0
-            stopTicker()
+    #if DEBUG
+    /// One runnable check for the arithmetic in this file: clamp bounds and
+    /// the playhead→segment lookup (gaps between segments included).
+    static func selfCheck() {
+        assert(clamp(-5, duration: 10) == 0)
+        assert(clamp(99, duration: 10) == 9.9)
+        assert(clamp(4, duration: 10) == 4)
+        assert(clamp(3, duration: 0) == 0)  // not-yet-loaded player
+
+        func seg(_ a: Int, _ b: Int) -> Transcript.Segment {
+            .init(speaker: "s", start_ms: a, end_ms: b, text: "")
         }
+        // 0–1s, silence 1–3s, 3–4s.
+        let segs = [seg(0, 1000), seg(3000, 4000)]
+        assert(Transcript.segmentIndex(at: 0, in: segs) == 0)
+        assert(Transcript.segmentIndex(at: 0.5, in: segs) == 0)
+        assert(Transcript.segmentIndex(at: 2, in: segs) == nil)   // in the gap
+        assert(Transcript.segmentIndex(at: 3.5, in: segs) == 1)
+        assert(Transcript.segmentIndex(at: 9, in: segs) == nil)   // past the end
+        assert(Transcript.segmentIndex(at: 1, in: []) == nil)
+    }
+    #endif
+}
+
+extension Transcript {
+    /// Index of the segment containing `position` (seconds), or nil when the
+    /// playhead sits in a gap or past the last segment.
+    /// ponytail: linear scan — a 1h transcript is ~1k segments and this runs
+    /// 5×/s; binary search if segment counts ever get absurd.
+    static func segmentIndex(at position: TimeInterval, in segments: [Segment]) -> Int? {
+        let ms = Int(position * 1000)
+        return segments.firstIndex { ms >= $0.start_ms && ms < $0.end_ms }
     }
 }
 
@@ -132,12 +232,14 @@ struct PlaybackBar: View {
                 .background(Circle().fill(Theme.accent))
             }
             .buttonStyle(PressableButtonStyle())
-            .disabled(model.isLoading)
+            .disabled(model.isLoading || model.blockedByRecording)
+            .opacity(model.blockedByRecording ? 0.45 : 1)
             .accessibilityLabel(model.isPlaying ? "Pause playback" : "Play recording")
 
             Text(AppState.format(model.position))
                 .font(Theme.mono(11, .medium))
                 .monospacedDigit()
+                .contentTransition(.numericText())
                 .foregroundStyle(Theme.ink)
 
             GeometryReader { geo in
