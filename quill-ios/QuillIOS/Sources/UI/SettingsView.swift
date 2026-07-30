@@ -129,6 +129,22 @@ struct SettingsView: View {
                         .fill(Theme.inset.opacity(0.5))
                 )
                 .focused($focused)
+                // A multiline TextEditor has no return-key dismiss, so without
+                // this the keyboard can only be closed by dragging the sheet,
+                // which also loses the edit position.
+                //
+                // Deliberately NOT labelled "done": the sheet's own done
+                // (which closes settings) sits at the top of the same screen,
+                // and two buttons reading "done" with different consequences
+                // is worse than the keyboard being hard to dismiss.
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("hide keyboard") { focused = false }
+                            .font(Theme.mono(13, .medium))
+                            .foregroundStyle(Theme.accent)
+                    }
+                }
 
                 HStack {
                     Text(custom.isEmpty ? "default prompt" : "custom prompt")
