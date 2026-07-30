@@ -33,14 +33,18 @@ promo cut, banner, or landing update so the series stays comparable.
 - Grade: trim to length, 0.5-0.8s fade-in, ~1.4s fade-out landing on the tagline
 - Loudness: loudnorm I=-17..-18, TP=-1.5 (social autoplay comfort)
 - Resolved via media-use (HeyGen catalog); tracks under `.media/audio/bgm/`
+- Two tracks resolved; `bgm_002` (19s, beat-driven tech launch) is the one in
+  the shipped cut. `bgm_001` (20s, warm ambient) is the quieter alternate —
+  keep both, the series may want the calm one.
 
 ## Renders
 
-- 1920×1080 @ 30fps, 15s standard cut
-- `npm run render` → mux audio: see ffmpeg recipe in README below
+- 1920×1080 @ 30fps, 15s standard cut = 450 frames
+- `npm run render` → `out/quill-promo.mp4` (silent), then mux the track below.
+  There is no README in this directory; this file is the only promo doc.
 
 ```sh
-ffmpeg -y -i out/quill-promo.mp4 -i .media/audio/bgm/<track>.wav \
+ffmpeg -y -i out/quill-promo.mp4 -i .media/audio/bgm/bgm_002.wav \
   -filter_complex "[1:a]atrim=0:15,afade=t=in:st=0:d=0.5,afade=t=out:st=13.6:d=1.4,loudnorm=I=-17:TP=-1.5[a]" \
   -map 0:v -map "[a]" -c:v copy -c:a aac -b:a 192k -shortest out/quill-promo-music.mp4
 ```
@@ -48,7 +52,14 @@ ffmpeg -y -i out/quill-promo.mp4 -i .media/audio/bgm/<track>.wav \
 ## Asset inventory
 
 - `src/QuillPromo.tsx` — the 15s three-beat composition (wordmark → 3 phones → tagline)
-- `public/*-framed.png` — device-framed screenshots (regenerate via /tmp/frame.py pattern in site/)
+- `public/{home,transcript,detail}-light-framed.png` — the three device-framed
+  screenshots the composition loads by name via `staticFile()`. Copies of the
+  same-named files in `../site/framed/`; that directory is the source, and it
+  also holds the dark + settings variants this cut doesn't use.
+  ponytail: no regeneration script is checked in — the framer was a throwaway
+  `/tmp/frame.py`, long gone. Re-shoot in the simulator and re-frame by hand
+  if the UI moves; commit the script then if it happens twice.
+- `.media/audio/bgm/bgm_00{1,2}.wav` — resolved tracks, with provenance in
+  `.media/manifest.jsonl`. `.media/` and `out/` are gitignored.
 - `../site/banner.png` — 1500×500 header banner
-- `../site/framed/` — all framed screenshots
 - `../site/index.html` — landing page (kobe-landing-light grammar)

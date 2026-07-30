@@ -13,11 +13,14 @@ import {
 // serif fallback keeps render hermetic). Motion follows apple-design:
 // critically damped springs, no bounce.
 //
-// Beats:  0-3s   [ quill ] wordmark types in
-//         3-7s   phone 1 slides up: record (home)
-//         6-10s  phone 2: transcript w/ speakers
-//         9-13s  phone 3: structured note
-//         12-15s tagline + repo
+// Beats (frames @30fps, matching the constants below — the phones stagger 1s
+// apart and then all three hold, they don't hand off in 3s windows):
+//         0.2-2.7s   [ quill ] wordmark types in, then shrinks + fades out
+//         3.3s       phone 1 slides up: record (home)
+//         4.3s       phone 2: transcript w/ speakers
+//         5.3s       phone 3: structured note
+//         10.7s      captions fade
+//         11.0-15s   tagline + repo
 
 const paper = "#F6F3EC";
 const ink = "#3B322A";
@@ -226,7 +229,12 @@ export const QuillPromo: React.FC = () => {
 
       <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
         <div style={{ transform: `translateY(${wordmarkCenter}px) scale(${wordmarkScale})` }}>
-          <Wordmark start={6} />
+          {/* exitAt was implemented in Wordmark but never passed, so the mark
+              only shrank to 0.42 and parked at y-320 — which is exactly behind
+              phone 2 — staying there through the tagline. Fading it on the same
+              80→110 window the shrink already uses hands the frame to the
+              phones instead of leaving a fragment under one. */}
+          <Wordmark start={6} exitAt={80} />
         </div>
       </AbsoluteFill>
 
