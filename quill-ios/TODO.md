@@ -21,8 +21,10 @@
       confirmation), share the whole folder as a zip.
 - [x] **Auto-title** — FoundationModels one-liner per session replacing
       "Today 7:05 PM" with a content title ("weekly planning · pricing").
-- [ ] **Image understanding** (#14) — Vision/FoundationModels captioning of
-      images/, woven into notes.md by the enhance pass.
+- [x] **Image understanding** (#14) — Vision OCR over images/, cached in the
+      session folder as ocr.json, fed to the enhance prompt as context (never
+      dumped into notes.md). No FoundationModels captioning of textless
+      photos — Vision covers the whiteboard/slide case that matters.
 - [ ] **Onboarding** — first-launch card: what quill is, mic permission ask,
       model download explainer (in brand voice, not a system alert).
 - [ ] **App icon** — feather glyph on porcelain/terracotta, light+dark+tinted

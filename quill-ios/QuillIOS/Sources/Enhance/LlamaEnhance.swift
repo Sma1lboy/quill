@@ -75,7 +75,8 @@ struct LlamaEnhance: EnhanceService {
         let clipped = String(transcript.prefix(8_000))
 
         let notes = try await Self.generate(
-            system: FoundationModelsEnhance.prompt,
+            system: FoundationModelsEnhance.prompt
+                + (await FoundationModelsEnhance.imageContext(dir)),
             user: clipped,
             maxTokens: 800
         ).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -84,12 +85,13 @@ struct LlamaEnhance: EnhanceService {
         try Data((notes + "\n").utf8)
             .write(to: dir.appendingPathComponent("notes.md"), options: .atomic)
 
+        // Same title prompt as the FoundationModels path, so the two backends
+        // can't drift; saveTitle scrubs the output either way.
         if let title = try? await Self.generate(
-            system: "You give one short title for a note. 3-6 words, lowercase unless a proper noun, no quotes, no period. Output only the title.",
+            system: FoundationModelsEnhance.titlePrompt,
             user: String(notes.prefix(2_000)),
             maxTokens: 24
-        ).trimmingCharacters(in: .whitespacesAndNewlines),
-            !title.isEmpty, title.count <= 60 {
+        ) {
             FoundationModelsEnhance.saveTitle(title, in: dir)
         }
     }
