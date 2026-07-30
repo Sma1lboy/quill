@@ -35,7 +35,13 @@ final class RecordFlowTests: XCTestCase {
         let record = app.buttons["Start recording"]
         XCTAssertTrue(record.waitForExistence(timeout: 10), "record bar not found")
         record.tap()
-        app.tap() // poke the app so the interruption monitor fires if an alert is up
+        // Poke the app so the interruption monitor fires if an alert is up.
+        // NOT `app.tap()`: that hits the screen centre, which is a session row
+        // once the library has ~8 rows — it navigates into the detail view and
+        // "Stop recording" below is then gone, so the test fails as the
+        // library grows and reads like a regression. The header wordmark is
+        // inert and always in the same place.
+        app.staticTexts["quill"].firstMatch.tap()
 
         // Capture ~8 seconds of live audio.
         sleep(8)

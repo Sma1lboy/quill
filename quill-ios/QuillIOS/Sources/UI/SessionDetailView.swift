@@ -459,10 +459,16 @@ struct SessionDetailView: View {
         )
     }
 
-    /// Transcription hit the auto-retry cap: nothing will pick this up again
-    /// without the retry button.
+    /// Nothing will pick this session up again without the retry button.
+    ///
+    /// Any failure count, not just a maxed-out one: `drain` increments the
+    /// counter on a throw and does NOT re-append, so the only paths back into
+    /// the queue are `resumePending` at launch and this button. A session that
+    /// failed once mid-session is therefore just as stranded as one at the
+    /// cap — it simply looks fine, because "awaiting transcription" is what
+    /// the row said while nothing was going to happen.
     private var gaveUp: Bool {
-        !isQueued && Transcriber.failedAttempts(in: dir) >= Transcriber.maxAutoAttempts
+        !isQueued && Transcriber.failedAttempts(in: dir) > 0
     }
 
     private var statusText: String {
