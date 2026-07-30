@@ -8,6 +8,8 @@ import SwiftUI
 struct SessionDetailView: View {
     @ObservedObject var state: AppState
     let id: String
+    /// Segment index to open the transcript on (set when arriving from search).
+    var scrollToSegment: Int?
     @State private var transcript: Transcript?
     @State private var notes: String?
     @State private var images: [URL] = []
@@ -45,6 +47,7 @@ struct SessionDetailView: View {
         // stages (audio, transcript) are kept and inspectable, but read as
         // intermediates — notes first, then images, then a collapsed
         // transcript, playback and facts tucked at the bottom.
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 // 1 · The note (or the path to one).
@@ -110,10 +113,20 @@ struct SessionDetailView: View {
                                     .buttonStyle(.plain)
                                     Text(seg.text)
                                         .font(.system(size: 14))
-                                        .foregroundStyle(Theme.ink.opacity(0.85))
+                                        .foregroundStyle(
+                                            Theme.ink.opacity(i == scrollToSegment ? 1 : 0.85)
+                                        )
                                         .lineSpacing(3)
                                         .textSelection(.enabled)
                                 }
+                                .padding(.horizontal, i == scrollToSegment ? 8 : 0)
+                                .padding(.vertical, i == scrollToSegment ? 6 : 0)
+                                .background(
+                                    // The search hit stays marked after the jump.
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .fill(i == scrollToSegment ? Theme.accentSoft : .clear)
+                                )
+                                .id(i)
                             }
                         }
                         .padding(.top, 12)
@@ -206,6 +219,16 @@ struct SessionDetailView: View {
         .onChange(of: pickerItems) { _, items in
             guard !items.isEmpty else { return }
             Task { await importImages(items) }
+        }
+        // Arrived from search: open the transcript and ride down to the hit.
+        // ponytail: one frame of settle time instead of an onAppear handshake
+        // per row — the disclosure has to lay out before the id resolves.
+        .task {
+            guard let target = scrollToSegment else { return }
+            showTranscript = true
+            try? await Task.sleep(for: .milliseconds(120))
+            withAnimation(Theme.spring) { proxy.scrollTo(target, anchor: .center) }
+        }
         }
     }
 

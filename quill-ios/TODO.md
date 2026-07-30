@@ -11,7 +11,7 @@
 ## Worth doing next (proposed)
 - [ ] **Playback** — play mic.caf in the session screen (AVPlayer + seek by
       tapping a transcript segment; segments are timestamped already).
-- [ ] **Search** — case/diacritic-insensitive substring over transcript.json
+- [x] **Search** — case/diacritic-insensitive substring over transcript.json
       across sessions; results jump to the segment.
 - [ ] **Session actions** — rename (title in meta.json), delete (with
       confirmation), share the whole folder as a zip.

@@ -72,6 +72,29 @@ final class DetailOpenTests: XCTestCase {
     }
 }
 
+/// Search sheet opens and takes a query. Running it in Debug also trips
+/// `TranscriptSearch.selfCheck()`, so a broken snippet/fold asserts here.
+final class SearchTests: XCTestCase {
+    @MainActor
+    func testSearchSheetAcceptsQuery() throws {
+        let app = XCUIApplication()
+        app.launch()
+        let search = app.buttons["Search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 8), "search button not in header")
+        search.tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "search field never appeared")
+        field.tap()
+        field.typeText("the")
+        sleep(3) // debounce + scan
+        XCTAssertTrue(app.state == .runningForeground, "app crashed during search")
+        for i in 0..<min(app.staticTexts.count, 30) {
+            let t = app.staticTexts.element(boundBy: i).label
+            if !t.isEmpty { print("SEARCH: \(t.prefix(100))") }
+        }
+    }
+}
+
 final class EnhanceErrorProbe: XCTestCase {
     @MainActor
     func testReadEnhanceError() throws {
@@ -279,5 +302,24 @@ final class ScreenshotDriver2: XCTestCase {
             app.swipeUp()
         }
         sleep(22)
+    }
+}
+
+final class ScreenshotDriver3: XCTestCase {
+    @MainActor
+    func testHoldNoteControlsOpen() throws {
+        let app = XCUIApplication()
+        app.launch()
+        app.buttons["New note"].firstMatch.tap()
+        sleep(24)
+    }
+    @MainActor
+    func testHoldSettingsScrolled() throws {
+        let app = XCUIApplication()
+        app.launch()
+        app.buttons["Settings"].firstMatch.tap()
+        sleep(1)
+        app.swipeUp(); app.swipeUp()
+        sleep(24)
     }
 }

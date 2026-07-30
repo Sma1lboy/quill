@@ -8,6 +8,7 @@ struct ContentView: View {
     @ObservedObject var state: AppState
     @State private var path = NavigationPath()
     @State private var showSettings = false
+    @State private var showSearch = false
     @StateObject private var updates = UpdateChecker()
 
     var body: some View {
@@ -15,7 +16,11 @@ struct ContentView: View {
             // Content fills the screen; the record bar docks at the bottom
             // where the thumb lives.
             VStack(spacing: 0) {
-                Header(state: state, onSettings: { showSettings = true })
+                Header(
+                    state: state,
+                    onSearch: { showSearch = true },
+                    onSettings: { showSettings = true }
+                )
 
                 if let manifest = updates.available {
                     UpdateBanner(manifest: manifest)
@@ -69,6 +74,9 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView(root: state.root)
         }
+        .sheet(isPresented: $showSearch) {
+            SearchView(state: state)
+        }
         .task { updates.check() }
         .animation(Theme.spring, value: state.isRecording)
         .animation(Theme.spring, value: state.pipeline)
@@ -80,6 +88,7 @@ struct ContentView: View {
 
 private struct Header: View {
     @ObservedObject var state: AppState
+    let onSearch: () -> Void
     let onSettings: () -> Void
 
     var body: some View {
@@ -99,15 +108,29 @@ private struct Header: View {
                 Theme.kicker("local · 100 languages")
             }
 
-            Button(action: onSettings) {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Theme.muted)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Circle())
+            // The icon pair sits in its own group — their 32pt frames are the
+            // separation, so no extra spacing eats the kicker on a small phone.
+            HStack(spacing: 0) {
+                Button(action: onSearch) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Theme.muted)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityLabel("Search")
+
+                Button(action: onSettings) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Theme.muted)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityLabel("Settings")
             }
-            .buttonStyle(PressableButtonStyle())
-            .accessibilityLabel("Settings")
         }
         .padding(.horizontal, 20)
         .padding(.top, 14)
