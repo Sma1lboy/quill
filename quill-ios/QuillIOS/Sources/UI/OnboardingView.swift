@@ -121,9 +121,12 @@ struct OnboardingView: View {
                     Text(primaryLabel)
                         .font(Theme.mono(16, .medium))
                         .foregroundStyle(Theme.paper)
+                        .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 56)
+                // minHeight: "allow microphone" at 1.6× scale is taller than
+                // 56pt, and a clipped consent button is a dead first launch.
+                .frame(minHeight: 56)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Theme.accent)
@@ -140,8 +143,9 @@ struct OnboardingView: View {
                     Text("skip for now")
                         .font(Theme.mono(12))
                         .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 44)
+                        .frame(minHeight: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(PressableButtonStyle())

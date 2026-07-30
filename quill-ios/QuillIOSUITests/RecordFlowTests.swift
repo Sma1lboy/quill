@@ -60,8 +60,10 @@ final class RecordFlowTests: XCTestCase {
             )
         }
 
-        // A TXT row proves the transcript was written.
-        let txtTag = app.staticTexts["TXT"].firstMatch
+        // A TXT row proves the transcript was written. The row is one
+        // accessibility element (so VoiceOver reads it as a sentence), so the
+        // stage tag is matched by identifier rather than as its own text.
+        let txtTag = app.descendants(matching: .any).matching(identifier: "TXT").firstMatch
         XCTAssertTrue(txtTag.waitForExistence(timeout: 30), "no transcribed session row appeared")
     }
 }

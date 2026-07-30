@@ -508,6 +508,10 @@ private struct SessionRow: View {
         // "NOTE, weekly planning, 47:00, chevron" as four separate stops.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spokenLabel)
+        // Collapsing the row hides the stage tag's own staticText, which the
+        // UI tests match on. The identifier keeps that hook without putting
+        // "TXT" in the spoken label (VoiceOver would say "T X T").
+        .accessibilityIdentifier(stageTag)
     }
 
     /// Stage spelled out (VoiceOver says "A U D" for the visual tag) and the

@@ -137,15 +137,33 @@ struct BracketChip: View {
             Text("]").foregroundStyle(Theme.accent)
         }
         .font(Theme.mono(size, .bold))
+        // Three Texts so the brackets can be terracotta; VoiceOver read them
+        // as three stops ("left bracket", "quill", "right bracket") on every
+        // screen the wordmark appears. One element, one word.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("quill")
     }
 }
 
 /// Instant press feedback: scale 0.97 on touch-down.
+///
+/// Reduce Motion swaps the scale for a dim, per DESIGN.md's "everything
+/// degrades to 150ms ease-out fades" — a spring-scaling button is exactly the
+/// motion the setting exists to suppress, and every pressable surface in quill
+/// routes through here, so it's one fix rather than one per button.
 struct PressableButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
-            .animation(.spring(response: 0.25, dampingFraction: 1.0), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1.0)
+            .opacity(configuration.isPressed && reduceMotion ? 0.7 : 1.0)
+            .animation(
+                reduceMotion
+                    ? .easeOut(duration: 0.15)
+                    : .spring(response: 0.25, dampingFraction: 1.0),
+                value: configuration.isPressed
+            )
     }
 }
 
