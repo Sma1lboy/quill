@@ -1,16 +1,15 @@
 # quill-ios · roadmap
 
-## In flight
-- [ ] **Model bake-off** (#15) — base/small/large-v3-turbo on-device compare,
-      running now; pick default from real numbers.
+## Shipped
+- [x] **Model bake-off** (#15) — base/small/large-v3-turbo compared on device
+      (`benchmark.md`); large-v3 turbo won on zh accuracy and punctuation and
+      is the default.
 - [x] **Live Activity** (#16) — lock-screen card + Dynamic Island, both
       phases (recording: mono timer + waveform; transcribing: spinner +
       percentage), all four presentations, stale-card cleanup at launch.
       Still missing the "cute" factor from the original note: feather-drawing
       progress and bracket-chip pulse are not built (a Live Activity can only
       animate what the system redraws, so those need a rethink).
-
-## Worth doing next (proposed)
 - [x] **Playback** — mic.caf in the session screen: play/pause, drag scrub,
       seek by tapping a transcript segment, playing segment marked. Stands
       down while a take is recording (shared AVAudioSession). No rate control
@@ -25,12 +24,16 @@
       session folder as ocr.json, fed to the enhance prompt as context (never
       dumped into notes.md). No FoundationModels captioning of textless
       photos — Vision covers the whiteboard/slide case that matters.
-- [ ] **Onboarding** — first-launch card: what quill is, mic permission ask,
-      model download explainer (in brand voice, not a system alert).
-- [ ] **App icon** — feather glyph on porcelain/terracotta, light+dark+tinted
-      variants.
-- [ ] **Mac handoff** — same folder schema as quill-app; sync via iCloud
-      Drive folder so desktop `claude -p` can enhance phone sessions.
+- [x] **Onboarding** — first-launch page: what quill is, on-device pitch, the
+      model download explained in brand voice before iOS's mic alert, and a
+      card that tracks the permission state. One page, no wizard.
+- [x] **App icon** — feather glyph, light+dark+tinted variants.
+
+## Worth doing next (proposed)
+- [ ] **Mac handoff** — iCloud sync investigated and deferred: the folder
+      contract is portable as-is, so share-as-zip + AirDrop is the shipping
+      path. iOS declines multi-track (mic + system) sessions so the Mac still
+      owns transcribing its own recordings.
 
 ## Settled decisions
 - Whisper (WhisperKit) for STT — multilingual incl. zh, fully local.
@@ -39,3 +42,6 @@
 - Notes structuring: Apple FoundationModels on-device; EnhanceService seam
   for a server backend if quality tops out.
 - Recordings are user-owned folders under Documents (Files-visible).
+- The filesystem is the transcription queue; automatic attempts cap at 3
+  (`transcribe_failures` in meta.json), then only the manual retry re-queues.
+- Deleting moves the folder to Documents/.trash, purged after 7 days.

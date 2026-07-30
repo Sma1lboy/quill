@@ -25,20 +25,43 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         popover.delegate = self
 
         if let button = statusItem.button {
-            let image = Self.featherImage()
-            image?.isTemplate = true
-            button.image = image
+            button.image = Self.idleImage
             button.action = #selector(togglePopover)
             button.target = self
         }
 
-        // Reflect recording state on the icon so it reads at a glance even
-        // with the popover closed.
+        // The icon is this app's main surface — with the popover closed it's the
+        // only thing telling you a recording is live. Swapping the image (not
+        // `contentTintColor`, which a template image ignores: the menu bar
+        // recolors template art itself and the tint never reaches the pixels)
+        // also keeps the elapsed time visible without opening anything.
         state.$phase
             .receive(on: RunLoop.main)
             .sink { [weak self] phase in
-                let recording = { if case .recording = phase { return true }; return false }()
-                self?.statusItem.button?.contentTintColor = recording ? .systemRed : nil
+                guard let button = self?.statusItem.button else { return }
+                if case .recording = phase {
+                    button.image = Self.recordingImage
+                } else {
+                    button.image = Self.idleImage
+                    button.title = ""
+                }
+            }
+            .store(in: &cancellables)
+
+        // Elapsed time beside the icon, mono and monospaced-digit so the width
+        // doesn't jitter (DESIGN.md: numbers are always monospacedDigit).
+        state.$elapsed
+            .receive(on: RunLoop.main)
+            .sink { [weak self] elapsed in
+                guard let button = self?.statusItem.button else { return }
+                guard state.isRecording else { return }
+                button.attributedTitle = NSAttributedString(
+                    string: " \(AppState.format(elapsed))",
+                    attributes: [
+                        .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+                        .foregroundColor: Self.accent,
+                    ]
+                )
             }
             .store(in: &cancellables)
     }
@@ -66,6 +89,32 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     </svg>
     """
 
+    /// Terracotta (DESIGN.md accent, light value) — the recording state's color
+    /// everywhere else in quill, so the menu bar agrees with the popover.
+    private static let accent = NSColor(red: 0.769, green: 0.420, blue: 0.282, alpha: 1)
+
+    /// Template art: the menu bar recolors it for light/dark and for the
+    /// highlighted state.
+    private static let idleImage: NSImage? = {
+        let image = featherImage()
+        image?.isTemplate = true
+        return image
+    }()
+
+    /// Accent baked into the pixels. A template image can't carry a custom
+    /// color, so recording needs its own non-template copy.
+    private static let recordingImage: NSImage? = {
+        guard let base = featherImage() else { return nil }
+        let tinted = NSImage(size: base.size)
+        tinted.lockFocus()
+        base.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+        accent.set()
+        NSRect(origin: .zero, size: base.size).fill(using: .sourceAtop)
+        tinted.unlockFocus()
+        tinted.isTemplate = false
+        return tinted
+    }()
+
     private static func featherImage() -> NSImage? {
         guard let data = featherSVG.data(using: .utf8),
               let image = NSImage(data: data)
@@ -73,4 +122,27 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         image.size = NSSize(width: 16, height: 16)
         return image
     }
+
+    #if DEBUG
+    /// The tint must actually reach the pixels — `contentTintColor` on a
+    /// template image silently doesn't, which is the bug this replaced.
+    static func selfCheck() {
+        func coloredPixels(_ image: NSImage?) -> Int {
+            guard let tiff = image?.tiffRepresentation,
+                  let rep = NSBitmapImageRep(data: tiff) else { return -1 }
+            var colored = 0
+            for x in 0..<rep.pixelsWide {
+                for y in 0..<rep.pixelsHigh {
+                    guard let c = rep.colorAt(x: x, y: y), c.alphaComponent > 0.3 else { continue }
+                    if abs(c.redComponent - c.greenComponent) > 0.12
+                        || abs(c.greenComponent - c.blueComponent) > 0.12 { colored += 1 }
+                }
+            }
+            return colored
+        }
+        assert(coloredPixels(recordingImage) > 0, "recording icon renders gray — tint lost")
+        assert(idleImage?.isTemplate == true, "idle icon must stay template art")
+        assert(recordingImage?.isTemplate == false, "tinted icon must not be template")
+    }
+    #endif
 }

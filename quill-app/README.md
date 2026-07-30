@@ -28,14 +28,22 @@ swift build -c release
 
 Requires macOS 15+ (Core Audio process taps). First recording prompts for
 Microphone and System Audio Recording permissions; first transcription
-downloads `openai_whisper-small` (~460 MB) once.
+downloads `openai_whisper-small` (~460 MB) once. Denying System Audio
+Recording is not fatal — quill records the mic only and the record bar reads
+`MIC ONLY`.
+
+There is no login item: quill is a bare binary, so you start it yourself after
+each boot, or add a LaunchAgent that runs
+`~/…/.build/release/QuillApp` with `RunAtLoad`. One instance per recordings
+folder — a second launch reports that and exits.
 
 ## UI
 
 Click the feather in the menu bar:
 
-- **Record button** — the red button doubles as a live level meter (halo
-  breathes with your mic). Record dot morphs into a stop square in place.
+- **Record button** — one full-width bar. Recording flips it to terracotta
+  with an elapsed timer and a live waveform; the record dot morphs into a
+  stop square in place. Reads `MIC ONLY` when the system tap is unavailable.
 - **Pipeline banner** — shows transcribing / structuring progress.
 - **Session list** — recent recordings with their stage (audio → transcript
   → notes); click one to open the best artifact available. A session whose

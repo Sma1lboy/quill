@@ -13,6 +13,7 @@ enum QuillAppMain {
         #if DEBUG
         WhisperKitEngine.selfCheck()
         TranscriptSearch.selfCheck()
+        MainActor.assumeIsolated { StatusItemController.selfCheck() }
         #endif
 
         let env = ProcessInfo.processInfo.environment
@@ -24,6 +25,20 @@ enum QuillAppMain {
         // window for screenshots — no status item interaction needed.
         if let mode = env["QUILL_PREVIEW"] {
             PreviewHarness.run(root: root, mode: mode)
+            return
+        }
+
+        // Two instances both drain the queue: the same session gets transcribed
+        // twice and `claude -p` runs twice, interleaving writes to one
+        // transcript.json. An advisory lock on the recordings root is enough —
+        // it's the shared resource, and the kernel drops the lock however we
+        // exit (no stale-pidfile cleanup to get wrong).
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let lock = open(root.appendingPathComponent(".quill.lock").path, O_CREAT | O_RDWR, 0o644)
+        if lock < 0 || flock(lock, LOCK_EX | LOCK_NB) != 0 {
+            FileHandle.standardError.write(Data(
+                "quill is already running for \(root.path) — quitting\n".utf8
+            ))
             return
         }
 
@@ -65,6 +80,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController = StatusItemController(state: state)
     }
 
+    /// Log out / restart / `killall` all arrive here, not through the SIGINT
+    /// handler. Without this the in-progress session never got its meta.json,
+    /// and both SessionSummary.scan and resumePending key off meta.json — so
+    /// the audio stayed on disk and the app ignored it forever.
+    func applicationWillTerminate(_ notification: Notification) {
+        state.stopIfRecording()
+    }
+
     func shutdown() {
         state.stopIfRecording()
         NSApp.terminate(nil)
@@ -96,6 +119,8 @@ final class AppState: ObservableObject {
     @Published private(set) var micLevel: Float = 0
     @Published private(set) var pipeline: PipelineStatus = .idle
     @Published private(set) var sessions: [SessionSummary] = []
+    /// System audio unavailable for the live session — recording mic only.
+    @Published private(set) var micOnly = false
     @Published var lastError: String?
 
     private let transcription = TranscriptionCoordinator()
@@ -109,10 +134,18 @@ final class AppState: ObservableObject {
 
     init(root: URL) {
         self.root = root
-        refreshSessions()
 
         // The preview harness renders fake sessions — don't try to transcribe them.
-        guard ProcessInfo.processInfo.environment["QUILL_PREVIEW"] == nil else { return }
+        guard ProcessInfo.processInfo.environment["QUILL_PREVIEW"] == nil else {
+            refreshSessions()
+            return
+        }
+
+        // Before the first scan: a session killed mid-recording has no
+        // meta.json, so it's invisible to both scan and resumePending until
+        // this rebuilds it.
+        RecordingSession.recoverOrphans(root: root)
+        refreshSessions()
 
         // Built outside the Task deliberately: the coordinator stores this
         // handler for the process's life, so it must hold us weakly — nested
@@ -147,6 +180,9 @@ final class AppState: ObservableObject {
         }
 
         phase = .recording(started: session!.startedAt)
+        // A tap failure isn't fatal any more, so it has to be visible — the
+        // header kicker would otherwise still promise both sides.
+        micOnly = session?.systemTrackError != nil
         elapsed = 0
         // 1:15 s — smooth enough for a level meter without burning CPU.
         ticker = Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { [weak self] _ in
@@ -165,6 +201,7 @@ final class AppState: ObservableObject {
         ticker = nil
         phase = .idle
         micLevel = 0
+        micOnly = false
         refreshSessions()
 
         let dir = session.dir
@@ -175,6 +212,11 @@ final class AppState: ObservableObject {
         guard let session else { return }
         elapsed = Date().timeIntervalSince(session.startedAt)
         micLevel = session.micLevel
+        // A dead route means the timer is counting past the end of the audio;
+        // say so instead of showing a healthy-looking recording.
+        if session.routeChanged, lastError == nil {
+            lastError = "audio route changed — mic capture stopped, stop and start again"
+        }
     }
 
     private func pipelineChanged(_ status: TranscriptionCoordinator.Status) {

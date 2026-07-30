@@ -104,7 +104,7 @@ private struct RecordHero: View {
                         Waveform(level: state.micLevel, tint: Theme.paper)
                             .frame(width: 56, height: 18)
 
-                        Text("STOP")
+                        Text(state.micOnly ? "MIC ONLY" : "STOP")
                             .font(Theme.mono(10, .semibold))
                             .tracking(1.2)
                             .foregroundStyle(Theme.paper.opacity(0.85))

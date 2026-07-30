@@ -8,7 +8,7 @@ no subscription — every session is a folder you own in Files.
 
 | | |
 |---|---|
-| **quill-ios/** | iPhone app — the main product. WhisperKit transcription (~100 languages), Apple Intelligence notes with a local Qwen fallback, speaker diarization, Live Activity, playback, one-tap organized notes. |
+| **quill-ios/** | iPhone app — the main product. WhisperKit transcription (~100 languages), Apple Intelligence notes with a local Qwen fallback, speaker diarization, Live Activity, playback, cross-session transcript search, Vision OCR of attached images, one-tap organized notes. |
 | **quill-app/** | macOS menu-bar sibling. Records mic + system audio (both sides of a call), same session-folder schema, `claude -p` notes structuring. |
 | **DESIGN.md** | The shared design language (kobe DNA: porcelain / espresso / terracotta, mono kickers, bracket-chip wordmark). |
 
@@ -71,5 +71,6 @@ Requires Xcode 26+ (iOS 26/27 device) and iOS 17+.
 
 ## Roadmap
 
-Multi-device sync (Mac ↔ iPhone via the shared folder schema), speaker
-naming, image understanding woven into notes. See `quill-ios/TODO.md`.
+Speaker naming, and Mac ↔ iPhone sync — iCloud was investigated and
+deferred, so today a session travels as a shared zip over AirDrop. See
+`quill-ios/TODO.md`.

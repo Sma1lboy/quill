@@ -48,6 +48,14 @@ final class MicRecorder: @unchecked Sendable {
     private var livenessPeak: Float = 0
     private var livenessSettled = false
 
+    /// Set when the audio route changed mid-recording (headphones plugged in, a
+    /// display with speakers connected). AVAudioEngine stops delivering buffers
+    /// after a configuration change, so the track silently stops growing while
+    /// the timer keeps counting — the caller surfaces this rather than letting
+    /// the UI keep promising audio.
+    private(set) var routeChanged = false
+    private var routeObserver: NSObjectProtocol?
+
     /// Start capturing the mic, encoding AAC into `url` (use a .caf extension
     /// — CAF needs no finalization pass, so a crash loses nothing written).
     func start(writingTo url: URL) throws {
@@ -55,12 +63,30 @@ final class MicRecorder: @unchecked Sendable {
         self.url = url
         try attach(voiceProcessing: Config.micVoiceProcessing())
         isRecording = true
+
+        // ponytail: detect and report, don't auto-restart. Restarting would
+        // have to reopen the same AVAudioFile, which truncates what's already
+        // recorded — losing the meeting to save the tail is the wrong trade.
+        // Upgrade path is multi-part tracks (mic.caf, mic-2.caf) in meta.json.
+        routeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.isRecording, !self.routeChanged else { return }
+            self.routeChanged = true
+            FileHandle.standardError.write(Data(
+                "warning: audio route changed mid-recording — mic capture stopped\n".utf8
+            ))
+        }
     }
 
     /// Stop capturing and finalize the file. Idempotent.
     func stop() {
         guard isRecording else { return }
         isRecording = false
+        if let routeObserver {
+            NotificationCenter.default.removeObserver(routeObserver)
+            self.routeObserver = nil
+        }
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
         file = nil
