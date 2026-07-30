@@ -50,6 +50,25 @@ philosophy come straight from it. The visual language is inherited from
   <img src="site/framed/detail-dark-framed.png" width="230">
 </p>
 
+## Install (build it yourself)
+
+No Apple Developer Program yet, so quill isn't on TestFlight or the App
+Store — you sideload it with a free Apple ID:
+
+```sh
+git clone https://github.com/Sma1lboy/quill && cd quill/quill-ios
+brew install xcodegen && xcodegen generate
+open QuillIOS.xcodeproj
+```
+
+In Xcode: select the QuillIOS target → Signing & Capabilities → set Team
+to your personal (free) Apple ID team, plug in your iPhone, press Run.
+First launch: Settings → General → VPN & Device Management → trust your
+developer certificate. Free-account builds expire after 7 days — just
+press Run again.
+
+Requires Xcode 26+ (iOS 26/27 device) and iOS 17+.
+
 ## Roadmap
 
 Multi-device sync (Mac ↔ iPhone via the shared folder schema), speaker
