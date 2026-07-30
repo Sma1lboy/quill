@@ -318,8 +318,26 @@ struct SessionSummary: Identifiable, Equatable {
     enum Stage: Equatable {
         case empty        // note folder with no audio yet
         case recorded     // audio only
+        case failed       // audio, but quill stopped retrying transcription
         case transcribed  // intermediate: transcript, no notes yet
         case noted        // final: notes.md exists
+    }
+
+    /// Stage for one folder, from the files present plus the same failure
+    /// count the queue itself reads (`Transcriber.failedAttempts`) — one
+    /// threshold, not a second copy that can drift from `resumePending`'s.
+    ///
+    /// `.failed` only shadows `.recorded`: once a transcript exists the
+    /// session succeeded, and a hand-retry clears the count via `enqueue`,
+    /// so the row stops reading ERR the moment the user retries.
+    /// Nonisolated and disk-only, so `scan` can call it off the main actor.
+    static func stage(of dir: URL, fm: FileManager = .default) -> Stage {
+        if fm.fileExists(atPath: dir.appendingPathComponent("notes.md").path) { return .noted }
+        if fm.fileExists(atPath: dir.appendingPathComponent("transcript.json").path) { return .transcribed }
+        guard fm.fileExists(atPath: dir.appendingPathComponent("mic.caf").path) else { return .empty }
+        return Transcriber.failedAttempts(in: dir) >= Transcriber.maxAutoAttempts
+            ? .failed
+            : .recorded
     }
 
     let id: String
@@ -330,10 +348,6 @@ struct SessionSummary: Identifiable, Equatable {
     let stage: Stage
     /// LLM-generated (or user-set) content title from meta.json, if any.
     let contentTitle: String?
-    /// True when transcription failed enough times that quill stopped
-    /// retrying it automatically. Such a session keeps its audio and stays
-    /// in the list; only `AppState.retryTranscription(id:)` restarts it.
-    var transcriptionGaveUp: Bool = false
 
     /// Content title when we have one; falls back to relative time.
     var title: String { contentTitle ?? timeTitle }
@@ -362,6 +376,9 @@ struct SessionSummary: Identifiable, Equatable {
     }
 
     static func scan(root: URL, limit: Int = 50) -> [SessionSummary] {
+        #if DEBUG
+        selfCheckStage()  // every list load and every search goes through here
+        #endif
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: root, includingPropertiesForKeys: [.isDirectoryKey]
@@ -385,27 +402,59 @@ struct SessionSummary: Identifiable, Equatable {
                         started = ISO8601DateFormatter().date(from: s)
                     }
                 }
-                let stage: Stage
-                if fm.fileExists(atPath: dir.appendingPathComponent("notes.md").path) {
-                    stage = .noted
-                } else if fm.fileExists(atPath: dir.appendingPathComponent("transcript.json").path) {
-                    stage = .transcribed
-                } else if fm.fileExists(atPath: dir.appendingPathComponent("mic.caf").path) {
-                    stage = .recorded
-                } else {
-                    stage = .empty
-                }
                 return SessionSummary(
                     id: dir.lastPathComponent,
                     dir: dir,
                     kind: kind,
                     started: started,
                     duration: duration,
-                    stage: stage,
-                    contentTitle: contentTitle,
-                    transcriptionGaveUp: stage == .recorded
-                        && Transcriber.failedAttempts(in: dir) >= Transcriber.maxAutoAttempts
+                    stage: stage(of: dir, fm: fm),
+                    contentTitle: contentTitle
                 )
             }
     }
+
+    #if DEBUG
+    /// Both directions of the ERR threshold, against real folders: a session
+    /// at the cap must read `.failed` (the list said "waiting" about something
+    /// permanently stopped), and one below it must still read `.recorded` — a
+    /// premature ERR on a session merely queued is the same lie inverted.
+    static func selfCheckStage() {
+        let fm = FileManager.default
+        let box = fm.temporaryDirectory
+            .appendingPathComponent("quill-stagecheck-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: box) }
+
+        func folder(_ name: String, files: [String], failures: Int? = nil) -> URL {
+            let dir = box.appendingPathComponent(name, isDirectory: true)
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            for f in files {
+                try? Data("x".utf8).write(to: dir.appendingPathComponent(f))
+            }
+            if let failures {
+                SessionMeta.patch(in: dir) { $0["transcribe_failures"] = failures }
+            }
+            return dir
+        }
+
+        let cap = Transcriber.maxAutoAttempts
+        assert(stage(of: folder("none", files: [])) == .empty)
+        assert(stage(of: folder("queued", files: ["mic.caf"])) == .recorded)
+        // Below the cap it is still going to be retried — not a failure yet.
+        assert(stage(of: folder("try1", files: ["mic.caf"], failures: 1)) == .recorded)
+        assert(stage(of: folder("try-last", files: ["mic.caf"], failures: cap - 1)) == .recorded)
+        // At and past the cap nothing will retry it automatically again.
+        assert(stage(of: folder("gaveup", files: ["mic.caf"], failures: cap)) == .failed)
+        assert(stage(of: folder("gaveup-more", files: ["mic.caf"], failures: cap + 5)) == .failed)
+        // A hand-retry clears the count (see Transcriber.enqueue) — the row
+        // has to drop ERR immediately, not wait for the next attempt.
+        let retried = folder("retried", files: ["mic.caf"], failures: cap)
+        assert(stage(of: retried) == .failed)
+        SessionMeta.patch(in: retried) { $0.removeValue(forKey: "transcribe_failures") }
+        assert(stage(of: retried) == .recorded, "a cleared count must stop reading as failed")
+        // A transcript outranks stale failure counts from earlier attempts.
+        assert(stage(of: folder("won", files: ["mic.caf", "transcript.json"], failures: cap)) == .transcribed)
+        assert(stage(of: folder("noted", files: ["mic.caf", "transcript.json", "notes.md"], failures: cap)) == .noted)
+    }
+    #endif
 }

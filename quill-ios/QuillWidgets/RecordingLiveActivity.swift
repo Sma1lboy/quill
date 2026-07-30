@@ -138,9 +138,7 @@ private struct ElapsedTimer: View {
         Group {
             if state.isPaused {
                 // Frozen span between two stored dates — see ContentState.pausedAt.
-                Text(Duration.seconds(
-                    (state.pausedAt ?? state.startedAt).timeIntervalSince(state.startedAt)
-                ).formatted(.time(pattern: .minuteSecond)))
+                Text(state.pausedClock)
             } else {
                 Text(timerInterval: state.startedAt...Date(timeIntervalSinceNow: 3600 * 12),
                      countsDown: false)
@@ -150,6 +148,11 @@ private struct ElapsedTimer: View {
         .monospacedDigit()
         .foregroundStyle(tint)
         .multilineTextAlignment(.trailing)
+        // The compact trailing region is 44pt wide; `h:mm:ss` needs 52pt at
+        // 12pt mono, so an hour-long take rendered as "1:23…" — the digits
+        // that matter clipped away. Shrink to fit instead of truncating.
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
     }
 }
 

@@ -466,7 +466,7 @@ private struct SessionRow: View {
             Text(stageTag)
                 .font(Theme.mono(10, .semibold))
                 .tracking(0.5)
-                .foregroundStyle(session.stage == .noted ? Theme.accent : Theme.muted)
+                .foregroundStyle(tagColor)
                 .lineLimit(1)
                 // Scales with the glyphs: a pinned 36pt column truncates
                 // "NOTE" as soon as the user asks for larger text.
@@ -532,17 +532,31 @@ private struct SessionRow: View {
         switch session.stage {
         case .empty: return "no audio yet"
         case .recorded: return "audio only, not transcribed"
+        case .failed: return "transcription failed, open to retry"
         case .transcribed: return "transcribed"
         case .noted: return "notes ready"
         }
     }
 
+    // Tags match the macOS sibling exactly (PopoverView.swift:445) so the same
+    // session reads the same on both devices.
     private var stageTag: String {
         switch session.stage {
         case .empty: return "—"
         case .recorded: return "AUD"
+        case .failed: return "ERR"
         case .transcribed: return "TXT"
         case .noted: return "NOTE"
+        }
+    }
+
+    /// ERR takes the error slot; per DESIGN.md terracotta never means
+    /// "problem", so accent stays reserved for the fully-processed row.
+    private var tagColor: Color {
+        switch session.stage {
+        case .noted: return Theme.accent
+        case .failed: return Theme.error
+        default: return Theme.muted
         }
     }
 }

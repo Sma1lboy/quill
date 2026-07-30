@@ -138,6 +138,7 @@ final class RecordingActivityController {
 
     #if DEBUG
     static func selfCheck() {
+        RecordingActivityAttributes.selfCheckPausedClock()
         let t = Date()
         assert(shouldPush(force: false, since: t, now: t + 2))     // throttle open
         assert(!shouldPush(force: false, since: t, now: t + 0.3))  // throttled
