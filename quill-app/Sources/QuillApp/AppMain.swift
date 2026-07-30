@@ -13,6 +13,7 @@ enum QuillAppMain {
         #if DEBUG
         WhisperKitEngine.selfCheck()
         TranscriptSearch.selfCheck()
+        MicRecorder.selfCheck()
         MainActor.assumeIsolated { StatusItemController.selfCheck() }
         #endif
 
@@ -217,6 +218,12 @@ final class AppState: ObservableObject {
         if session.routeChanged, lastError == nil {
             lastError = "audio route changed — mic capture stopped, stop and start again"
         }
+        // Silent audio loss is the one recording failure the user can't see —
+        // the timer keeps counting either way. Say it while they can still free
+        // space or stop and keep what landed. Same wording as iOS.
+        if session.isFailingToWrite, lastError == nil {
+            lastError = "storage full — audio is no longer being saved"
+        }
     }
 
     private func pipelineChanged(_ status: TranscriptionCoordinator.Status) {
@@ -273,6 +280,7 @@ final class AppState: ObservableObject {
 /// One row in the popover's session list, derived purely from what's on disk.
 struct SessionSummary: Identifiable, Equatable {
     enum Stage: Equatable {
+        case empty         // folder with no audio (an iOS note not recorded into)
         case recorded      // audio only
         case failed        // transcription threw; transcribe.failed present
         case transcribed   // transcript.json present
@@ -327,6 +335,12 @@ struct SessionSummary: Identifiable, Equatable {
                     TranscriptionCoordinator.failureMarker
                 ).path) {
                     stage = .failed
+                } else if (try? SessionMeta.read(from: dir).tracks.isEmpty) != false {
+                    // No tracks in meta.json: an iOS note folder created but
+                    // never recorded into, shared over here. resumePending
+                    // already skips these; the row said AUD / "Audio only"
+                    // for a folder that holds no audio at all.
+                    stage = .empty
                 } else {
                     stage = .recorded
                 }

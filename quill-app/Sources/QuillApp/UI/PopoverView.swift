@@ -440,8 +440,11 @@ private struct SessionRow: View {
         }
     }
 
+    // Tags match the iOS sibling exactly (ContentView.swift:536) so the same
+    // session reads the same on both devices.
     private var stageTag: String {
         switch session.stage {
+        case .empty: return "—"
         case .recorded: return "AUD"
         case .failed: return "ERR"
         case .transcribed: return "TXT"
@@ -459,6 +462,7 @@ private struct SessionRow: View {
 
     private var helpText: String {
         switch session.stage {
+        case .empty: return "No audio yet — opens the folder"
         case .recorded: return "Audio only — opens the folder"
         case .failed: return "Transcription failed — see transcribe.log"
         case .transcribed: return "Opens transcript.md"

@@ -18,6 +18,10 @@ final class RecordingSession {
     /// The audio route changed mid-recording, so the mic track stopped growing.
     var routeChanged: Bool { mic.routeChanged }
 
+    /// Mic buffers are being dropped instead of written — effectively a full
+    /// disk. The take is still running, but audio is being lost.
+    var isFailingToWrite: Bool { mic.isFailingToWrite }
+
     /// Rebuild meta.json for sessions killed before `stop()` ran (SIGKILL,
     /// panic, power loss — `applicationWillTerminate` covers the graceful
     /// cases). Audio is on disk but every scan keys off meta.json, so without

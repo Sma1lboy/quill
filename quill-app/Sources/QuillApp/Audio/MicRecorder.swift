@@ -42,6 +42,36 @@ final class MicRecorder: @unchecked Sendable {
     /// used to offset-align the two tracks' transcript timestamps.
     private(set) var firstBufferAt: Date?
 
+    /// Consecutive failed buffer writes, shared with the level's lock (written
+    /// from the tap thread, read from main). A handful of buffers is ~0.5s of
+    /// audio — enough to tell a one-off hiccup from a disk that has stopped
+    /// accepting writes. Same threshold and semantics as the iOS sibling
+    /// (QuillIOS/Sources/Audio/MicRecorder.swift:40).
+    static let writeFailureLimit = 8
+    /// Buffers are being dropped instead of written — effectively always a full
+    /// disk. The take is still running, but audio is being lost.
+    var isFailingToWrite: Bool {
+        levelLock.withLock { _writeFailures >= Self.writeFailureLimit }
+    }
+    private var _writeFailures = 0
+    private var writeFailures: Int {
+        get { levelLock.withLock { _writeFailures } }
+        set { levelLock.withLock { _writeFailures = newValue } }
+    }
+
+    #if DEBUG
+    /// The write-failure threshold: a hiccup must stay quiet, a dead disk must
+    /// speak up. Both directions matter — a false alarm mid-meeting is as bad
+    /// as silence.
+    static func selfCheck() {
+        func failing(_ n: Int) -> Bool { n >= writeFailureLimit }
+        assert(!failing(0))
+        assert(!failing(writeFailureLimit - 1))  // transient — stay quiet
+        assert(failing(writeFailureLimit))       // real fault — speak up
+        assert(failing(500))
+    }
+    #endif
+
     // Liveness check state (voice-processing path only). Written from the tap
     // callback, read on main when deciding to fall back.
     private var livenessFrames = 0
@@ -195,7 +225,6 @@ final class MicRecorder: @unchecked Sendable {
                     bufferPeak = max(bufferPeak, abs(data[i]))
                 }
             }
-            self.setLevel(bufferPeak)
 
             if !self.livenessSettled {
                 self.livenessPeak = max(self.livenessPeak, bufferPeak)
@@ -211,7 +240,17 @@ final class MicRecorder: @unchecked Sendable {
 
             do {
                 try file.write(from: buffer)
+                // Level only after a successful write: it drives the popover's
+                // waveform, and a breathing waveform over a failing write
+                // (disk full) tells the user their meeting is being recorded
+                // when nothing is landing.
+                self.setLevel(bufferPeak)
+                self.writeFailures = 0
             } catch {
+                // One bad buffer shouldn't end the session; keep tapping. A run
+                // of them is a real fault (out of space) — surface it.
+                self.setLevel(0)
+                self.writeFailures += 1
                 FileHandle.standardError.write(Data("mic track write failed: \(error)\n".utf8))
             }
         }
@@ -240,9 +279,13 @@ final class MicRecorder: @unchecked Sendable {
                 if let data = mono.floatChannelData?[0] {
                     for i in 0..<Int(mono.frameLength) { peak = max(peak, abs(data[i])) }
                 }
-                self.setLevel(peak)
                 try file.write(from: mono)
+                // Level only after a successful write — see installVoiceTap.
+                self.setLevel(peak)
+                self.writeFailures = 0
             } catch {
+                self.setLevel(0)
+                self.writeFailures += 1
                 FileHandle.standardError.write(Data("mic track write failed: \(error)\n".utf8))
             }
         }

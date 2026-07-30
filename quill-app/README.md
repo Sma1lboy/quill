@@ -19,6 +19,16 @@ Each session lands in `~/Recordings/<yyyy.MM.dd-HHmm>/`. The structuring
 stage pipes the transcript into a configurable CLI (default `claude -p`) and
 writes `notes.md` with Summary / Key points / Decisions / Action items.
 
+`transcript.md` is written *before* `transcript.json`, which is the queue's
+done-marker — same order as the iOS sibling, so a kill between the two writes
+leaves a session that still re-queues instead of one stuck without the
+readable render the notes pass needs.
+
+Automatic transcription retries are capped at 3 per session, counted in
+`meta.json` as `transcribe_failures` (the iOS key, so the count travels with a
+shared folder). Past the cap nothing re-queues it at launch; the row's `retry`
+clears the count and starts over.
+
 ## Build & run
 
 ```sh
@@ -47,7 +57,9 @@ Click the feather in the menu bar:
 - **Pipeline banner** — shows transcribing / structuring progress.
 - **Session list** — recent recordings with their stage (audio → transcript
   → notes); click one to open the best artifact available. A session whose
-  transcription failed reads `ERR`; hover it for `retry`.
+  transcription failed reads `ERR`; hover it for `retry`. A folder with no
+  audio at all — an iOS note folder shared over, never recorded into — reads
+  `—`, the same tag iOS gives it.
 - **Search** — type in the field beside the `recent` kicker to search every
   transcript (case- and accent-insensitive); a hit opens its session.
 
