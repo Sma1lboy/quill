@@ -103,8 +103,11 @@ private struct Header: View {
                         .font(Theme.mono(11, .semibold))
                         .tracking(1.2)
                         .foregroundStyle(Theme.accent)
+                        .lineLimit(1)
                 }
                 .transition(.opacity)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Recording in progress")
             } else {
                 Theme.kicker("local · 100 languages")
             }
@@ -116,8 +119,13 @@ private struct Header: View {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(Theme.muted)
+                        // 32pt was the visual size *and* the whole tap target;
+                        // Apple's floor is 44. Outsetting the content shape by
+                        // 6 on each side gets 44×44 of hit area without adding
+                        // 24pt of header width — the kicker next to it is
+                        // already tight on an SE.
                         .frame(width: 32, height: 32)
-                        .contentShape(Circle())
+                        .contentShape(Rectangle().inset(by: -6))
                 }
                 .buttonStyle(PressableButtonStyle())
                 .accessibilityLabel("Search")
@@ -126,8 +134,13 @@ private struct Header: View {
                     Image(systemName: "gearshape")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(Theme.muted)
+                        // 32pt was the visual size *and* the whole tap target;
+                        // Apple's floor is 44. Outsetting the content shape by
+                        // 6 on each side gets 44×44 of hit area without adding
+                        // 24pt of header width — the kicker next to it is
+                        // already tight on an SE.
                         .frame(width: 32, height: 32)
-                        .contentShape(Circle())
+                        .contentShape(Rectangle().inset(by: -6))
                 }
                 .buttonStyle(PressableButtonStyle())
                 .accessibilityLabel("Settings")
@@ -170,9 +183,10 @@ private struct RecordBar: View {
                 Text("mic")
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
             }
             .padding(.horizontal, 20)
-            .frame(height: 60)
+            .frame(minHeight: 60)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Theme.surface)
@@ -193,20 +207,32 @@ private struct RecordBar: View {
     /// per-second animation to fight the appear transition.
     private var recordingBar: some View {
         HStack(spacing: 12) {
-            Text(AppState.format(state.elapsed))
-                .font(Theme.mono(19, .semibold))
-                .monospacedDigit()
-                .foregroundStyle(Theme.paper)
+            // One element for the status half of the bar: VoiceOver said
+            // "7:34" and "PAUSED" as two unrelated stops, and never said the
+            // thing that matters — that a take is running at all.
+            HStack(spacing: 12) {
+                Text(AppState.format(state.elapsed))
+                    .font(Theme.mono(19, .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.paper)
+                    .lineLimit(1)
 
-            if state.isPaused {
-                Text("PAUSED")
-                    .font(Theme.mono(10, .semibold))
-                    .tracking(1.2)
-                    .foregroundStyle(Theme.paper.opacity(0.75))
-            } else {
-                Waveform(level: state.micLevel, tint: Theme.paper, maxHeight: 22)
-                    .frame(width: 56, height: 26)
+                if state.isPaused {
+                    Text("PAUSED")
+                        .font(Theme.mono(10, .semibold))
+                        .tracking(1.2)
+                        // Was paper@0.75 on accent: 2.60:1 light. This is the
+                        // only thing distinguishing paused from recording.
+                        .foregroundStyle(Theme.paper)
+                        .lineLimit(1)
+                } else {
+                    Waveform(level: state.micLevel, tint: Theme.paper, maxHeight: 22)
+                        .frame(width: 56, height: 26)
+                }
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(state.isPaused ? "Recording paused" : "Recording")
+            .accessibilityValue(spokenElapsed)
 
             Spacer(minLength: 8)
 
@@ -233,11 +259,19 @@ private struct RecordBar: View {
             .accessibilityLabel("Stop recording")
         }
         .padding(.horizontal, 14)
-        .frame(height: 60)
+        .frame(minHeight: 60)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Theme.accent)
                 .shadow(color: Theme.accent.opacity(0.35), radius: 14, y: 4)
+        )
+    }
+
+    /// Elapsed time as words. `AppState.format` produces "7:34", which
+    /// VoiceOver reads as "seven colon three four".
+    private var spokenElapsed: String {
+        Duration.seconds(Int(state.elapsed)).formatted(
+            .units(allowed: [.hours, .minutes, .seconds], width: .wide)
         )
     }
 }
@@ -254,7 +288,7 @@ private struct NewNoteButton: View {
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 16)
-                .frame(height: 60)
+                .frame(minHeight: 60)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Theme.surface)
@@ -290,13 +324,14 @@ private struct PipelineBanner: View {
                 Text(label)
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.muted)
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Spacer(minLength: 0)
                 if let p = fraction {
                     Text("\(Int(p * 100))%")
                         .font(Theme.mono(11, .medium))
                         .monospacedDigit()
                         .foregroundStyle(Theme.accent)
+                        .lineLimit(1)
                 }
             }
 
@@ -312,8 +347,16 @@ private struct PipelineBanner: View {
                     }
                 }
                 .frame(height: 3)
+                .accessibilityHidden(true) // the percent is on the label below
             }
         }
+        // The banner is the app's only notice that a model is downloading or a
+        // transcript is running. As five separate elements VoiceOver never
+        // announced the percentage moving; one live element does.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(fraction.map { "\(Int($0 * 100)) percent" } ?? "")
+        .accessibilityAddTraits(.updatesFrequently)
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .background(
@@ -357,7 +400,9 @@ private struct SessionList: View {
                 if !state.sessions.isEmpty {
                     Text(String(format: "%02d", state.sessions.count))
                         .font(Theme.mono(11, .medium))
-                        .foregroundStyle(Theme.muted.opacity(0.7))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.muted)
+                        .accessibilityLabel("\(state.sessions.count) sessions")
                 }
             }
             .padding(.horizontal, 20)
@@ -371,7 +416,8 @@ private struct SessionList: View {
                         .foregroundStyle(Theme.muted)
                     Text("sessions land in Files → quill as folders you own")
                         .font(Theme.mono(11))
-                        .foregroundStyle(Theme.muted.opacity(0.6))
+                        .foregroundStyle(Theme.muted)
+                        .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 48)
@@ -410,21 +456,28 @@ private struct SessionRow: View {
     var body: some View {
         HStack(spacing: 12) {
             // The tag encodes maturity: NOTE (final, accent) > TXT > AUD.
+            // The accent/muted split is DESIGN.md's, and it's decoration here
+            // rather than the only signal — the four states have four
+            // different strings, so a colorblind reader loses nothing.
             Text(stageTag)
                 .font(Theme.mono(10, .semibold))
                 .tracking(0.5)
-                .foregroundStyle(session.stage == .noted ? Theme.accent : Theme.muted.opacity(0.75))
-                .frame(width: 36, alignment: .leading)
+                .foregroundStyle(session.stage == .noted ? Theme.accent : Theme.muted)
+                .lineLimit(1)
+                // Scales with the glyphs: a pinned 36pt column truncates
+                // "NOTE" as soon as the user asks for larger text.
+                .frame(width: Theme.scaled(36), alignment: .leading)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(session.title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(Theme.face(15, .medium))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
                 if session.contentTitle != nil {
                     Text(session.timeTitle)
                         .font(Theme.mono(10))
                         .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
                 }
             }
 
@@ -435,15 +488,45 @@ private struct SessionRow: View {
                     .font(Theme.mono(12))
                     .monospacedDigit()
                     .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
             }
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.muted.opacity(0.5))
+                .foregroundStyle(Theme.muted)
         }
         .padding(.horizontal, 10)
-        .frame(height: 46)
+        // minHeight, not height: at large text sizes the row has to be
+        // allowed to grow or the title and duration get vertically clipped.
+        .frame(minHeight: 46)
         .contentShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        // One sentence instead of five fragments — VoiceOver read
+        // "NOTE, weekly planning, 47:00, chevron" as four separate stops.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spokenLabel)
+    }
+
+    /// Stage spelled out (VoiceOver says "A U D" for the visual tag) and the
+    /// duration as a real quantity, not a mono clock read digit by digit.
+    private var spokenLabel: String {
+        var parts = [session.title]
+        if session.contentTitle != nil { parts.append(session.timeTitle) }
+        if let d = session.duration {
+            parts.append(Duration.seconds(d).formatted(
+                .units(allowed: [.hours, .minutes, .seconds], width: .wide)
+            ))
+        }
+        parts.append(spokenStage)
+        return parts.joined(separator: ", ")
+    }
+
+    private var spokenStage: String {
+        switch session.stage {
+        case .empty: return "no audio yet"
+        case .recorded: return "audio only, not transcribed"
+        case .transcribed: return "transcribed"
+        case .noted: return "notes ready"
+        }
     }
 
     private var stageTag: String {

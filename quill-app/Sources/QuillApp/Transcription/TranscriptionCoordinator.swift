@@ -20,6 +20,11 @@ actor TranscriptionCoordinator {
     static let failureMarker = "transcribe.failed"
 
     private var queue: [URL] = []
+    /// The job `drain()` is on right now. It's already off `queue`, so without
+    /// this a retry clicked mid-transcription passes the dedup check and
+    /// re-queues the folder being processed — the same session transcribes
+    /// twice and `claude -p` runs twice on it.
+    private var inFlight: URL?
     private var draining = false
     private var engine: TranscriptionEngine?
     private var lastFailure: String?
@@ -39,7 +44,7 @@ actor TranscriptionCoordinator {
             runHook(for: sessionDir)
             return
         }
-        guard !queue.contains(sessionDir) else { return }
+        guard !queue.contains(sessionDir), sessionDir != inFlight else { return }
         queue.append(sessionDir)
         drainIfIdle()
     }
@@ -88,6 +93,8 @@ actor TranscriptionCoordinator {
     private func drain() async {
         while !queue.isEmpty {
             let dir = queue.removeFirst()
+            inFlight = dir
+            defer { inFlight = nil }
             publish(.transcribing(session: dir.lastPathComponent, queued: queue.count))
             // Clear any previous attempt's marker so a retry that succeeds
             // doesn't leave the row stuck on ERR.
@@ -175,6 +182,12 @@ actor TranscriptionCoordinator {
         guard !FileManager.default.fileExists(
             atPath: dir.appendingPathComponent("notes.md").path
         ) else { return }
+        // Nothing was said: silence, a truncated file, a failed mic. Structuring
+        // an empty transcript spends an LLM call to produce "Summary: none".
+        guard (Transcript.read(from: dir)?.segments.isEmpty ?? true) == false else {
+            log(dir, "no speech — skipping notes")
+            return
+        }
         publish(.structuring(session: dir.lastPathComponent, queued: queue.count))
         log(dir, "structuring notes via `\(Config.llmCommand())`")
         do {

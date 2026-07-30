@@ -94,6 +94,18 @@ extension TranscriptSearch {
         let cjk = snippet(zh, r2, lead: 3, trail: 3)
         assert(cjk.match == "定价", "multi-byte match slice broke: \(cjk.match)")
         assert(cjk.before == "…们讨论", "multi-byte lead window broke: \(cjk.before)")
+
+        // Regex metacharacters are literals here — `range(of:)` without
+        // .regularExpression must not treat these as patterns.
+        assert(text.range(of: ".*", options: options) == nil, "'.*' matched as regex")
+        assert(text.range(of: "^Caf", options: options) == nil, "'^' matched as anchor")
+        // An emoji query must slice on grapheme boundaries, not scalars.
+        let emoji = "recording 🎙️ live"
+        if let r3 = emoji.range(of: "🎙️", options: options) {
+            assert(snippet(emoji, r3).match == "🎙️", "emoji match slice broke")
+        } else {
+            assertionFailure("emoji query failed to match")
+        }
     }
 }
 #endif
