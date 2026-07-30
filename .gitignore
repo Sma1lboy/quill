@@ -1,0 +1,9 @@
+# vendored reference clones (credited in README, not re-published)
+ref/
+
+# build artifacts
+.build/
+DerivedData/
+*.xcodeproj
+xcuserdata/
+.DS_Store
