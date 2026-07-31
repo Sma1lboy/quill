@@ -1,6 +1,6 @@
 name: QuillIOS
 options:
-  bundleIdPrefix: com.digimata
+  bundleIdPrefix: me.sma1lboy
   deploymentTarget:
     iOS: "17.0"
   xcodeVersion: "16.0"
@@ -11,6 +11,12 @@ settings:
     SWIFT_VERSION: "6.0"
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
     DEVELOPMENT_TEAM: "68562FABX7"
+  configs:
+    # Sideload-only affordances (the update-manifest banner) compile into
+    # Debug — which is what deploy.sh builds — and out of the Release
+    # archive that goes to App Store Connect.
+    debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG SIDELOAD"
 
 packages:
   WhisperKit:
@@ -39,6 +45,8 @@ targets:
       - path: Shared
       - path: QuillIOS/Resources/Assets.xcassets
         buildPhase: resources
+      - path: QuillIOS/Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
     dependencies:
       - package: WhisperKit
       - package: LlamaSwift
@@ -53,8 +61,11 @@ targets:
       path: QuillIOS/Resources/Info.plist
       properties:
         CFBundleDisplayName: quill
-        CFBundleShortVersionString: "0.1.0"
+        CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "18221475"
+        # HTTPS-only (model downloads); no bundled crypto → exempt, so
+        # App Store Connect stops asking on every upload.
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -68,7 +79,7 @@ targets:
         NSSupportsLiveActivities: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.digimata.quill-ios
+        PRODUCT_BUNDLE_IDENTIFIER: me.sma1lboy.quill
         PRODUCT_NAME: quill
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
@@ -88,13 +99,13 @@ targets:
         # submission is rejected outright by ITMS validation. The plist is
         # generated from here, so keeping the two literals together is the
         # only place they can be kept in sync.
-        CFBundleShortVersionString: "0.1.0"
+        CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "18221475"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.digimata.quill-ios.widgets
+        PRODUCT_BUNDLE_IDENTIFIER: me.sma1lboy.quill.widgets
         CODE_SIGN_STYLE: Automatic
         SKIP_INSTALL: YES
 
@@ -107,7 +118,7 @@ targets:
       - target: QuillIOS
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.digimata.quill-ios-uitests
+        PRODUCT_BUNDLE_IDENTIFIER: me.sma1lboy.quill.uitests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
         TEST_TARGET_NAME: QuillIOS

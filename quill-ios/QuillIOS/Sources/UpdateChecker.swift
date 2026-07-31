@@ -1,10 +1,25 @@
 import Foundation
 import SwiftUI
 
+/// The running build's identity — always available, no network.
+enum AppVersion {
+    static var build: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+    }
+    static var current: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+    }
+}
+
+// Everything below is sideload-only. An App Store build must never point
+// users at a binary Apple didn't ship (Guideline 2.5.2 / 3.2.2), so the
+// whole update path compiles out of Release. SIDELOAD is defined on Debug
+// only (project.yml) — which is exactly what deploy.sh builds.
+#if SIDELOAD
+
 /// Sideload-era update detection: each deploy publishes a tiny manifest to
 /// the brand-studio share worker (stable URL); the app fetches it on launch
 /// and compares build numbers. Newer build → banner in settings/home.
-/// When distribution moves to TestFlight this whole file retires.
 @MainActor
 final class UpdateChecker: ObservableObject {
     struct Manifest: Decodable {
@@ -16,13 +31,6 @@ final class UpdateChecker: ObservableObject {
     static let manifestURL = URL(string: "https://brand-studio.sma1lboy.me/s/quill-ios-version")!
 
     @Published private(set) var available: Manifest?
-
-    static var currentBuild: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
-    }
-    static var currentVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-    }
 
     /// Pull the manifest out of the share page. The page is a full HTML
     /// document whose share-bar CSS contains `{...}` blocks, so the *first*
@@ -60,7 +68,7 @@ final class UpdateChecker: ObservableObject {
                   let manifest = Self.extractManifest(from: html)
             else { return }
 
-            available = Self.isNewer(manifest.build, than: Self.currentBuild) ? manifest : nil
+            available = Self.isNewer(manifest.build, than: AppVersion.build) ? manifest : nil
         }
     }
 
@@ -112,3 +120,5 @@ struct UpdateBanner: View {
         )
     }
 }
+
+#endif

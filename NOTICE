@@ -1,0 +1,38 @@
+# Third-party notices
+
+quill bundles or downloads the following. All are permissively licensed and
+cleared for commercial distribution on the App Store.
+
+## Upstream
+
+- **digimata/quill** — MIT — Copyright (c) 2026 Andrew Jones
+  https://github.com/digimata/quill
+  The audio capture core, session-folder contract, and "folders you own"
+  philosophy are derived from this project.
+
+- **kobe** — https://github.com/Sma1lboy/kobe
+  Visual language (porcelain / espresso / terracotta, mono kickers,
+  bracket-chip wordmark).
+
+## Swift packages
+
+- **WhisperKit** — MIT — Argmax, Inc.
+  https://github.com/argmaxinc/WhisperKit
+- **llama.swift** — MIT — Mattt
+  https://github.com/mattt/llama.swift
+- **swift-markdown-ui** — MIT — Guillermo Gonzalez
+  https://github.com/gonzalezreal/swift-markdown-ui
+- **FluidAudio** — Apache-2.0 — FluidInference
+  https://github.com/FluidInference/FluidAudio
+
+## Models (downloaded on device, never bundled)
+
+- **Whisper large-v3-turbo / base / small**, Core ML conversions — MIT —
+  OpenAI, converted by Argmax
+  https://huggingface.co/argmaxinc/whisperkit-coreml
+- **Qwen2.5-1.5B-Instruct-GGUF** — Apache-2.0 — Alibaba Cloud
+  https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
+  Optional, opt-in fallback for notes structuring.
+- **Speaker diarization models** (pyannote-family Core ML) — distributed by
+  FluidAudio under Apache-2.0
+  https://huggingface.co/FluidInference
