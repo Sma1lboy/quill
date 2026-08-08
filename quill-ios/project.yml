@@ -39,6 +39,12 @@ targets:
       - path: Shared
       - path: QuillIOS/Resources/Assets.xcassets
         buildPhase: resources
+      # Required-reason API declarations. Missing it, an App Store Connect
+      # upload is rejected before the build reaches TestFlight at all
+      # (ITMS-91053) — quill touches UserDefaults, file timestamps, and
+      # disk space.
+      - path: QuillIOS/Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
     dependencies:
       - package: WhisperKit
       - package: LlamaSwift
