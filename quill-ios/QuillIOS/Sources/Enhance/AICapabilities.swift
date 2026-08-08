@@ -68,6 +68,13 @@ enum AICapabilities {
             report.lines.append(("on-device model", "requires iOS 26"))
         }
 
+        // `PrivateCloudComputeLanguageModel` only exists in the iOS 27 SDK, so
+        // an `#available` runtime check isn't enough — the type has to be
+        // absent at compile time too or Xcode 26 can't build the app at all.
+        // Swift has no "#if sdk(>=27)", and the toolchain ships with the SDK,
+        // so the compiler version is the available proxy: 6.3.x is Xcode 26.6,
+        // the iOS 27 betas are 6.4+.
+        #if compiler(>=6.4)
         if #available(iOS 27.0, *) {
             let pcc = PrivateCloudComputeLanguageModel()
             report.lines.append(("private cloud", describePCC(pcc.availability)))
@@ -75,6 +82,9 @@ enum AICapabilities {
         } else {
             report.lines.append(("private cloud", "requires iOS 27"))
         }
+        #else
+        report.lines.append(("private cloud", "not in this SDK (needs Xcode 27)"))
+        #endif
         #else
         report.lines.append(("foundation models", "not in SDK"))
         #endif
@@ -93,6 +103,7 @@ enum AICapabilities {
         }
     }
 
+    #if compiler(>=6.4)
     @available(iOS 27.0, *)
     private static func describePCC(_ a: PrivateCloudComputeLanguageModel.Availability) -> String {
         switch a {
@@ -111,5 +122,6 @@ enum AICapabilities {
         @unknown default: return "unknown"
         }
     }
-    #endif
+    #endif  // compiler(>=6.4)
+    #endif  // canImport(FoundationModels)
 }
