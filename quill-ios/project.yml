@@ -61,7 +61,7 @@ targets:
       path: QuillIOS/Resources/Info.plist
       properties:
         CFBundleDisplayName: quill
-        CFBundleShortVersionString: "1.0.0"
+        CFBundleShortVersionString: "1.0.1"
         CFBundleVersion: "18221476"
         # HTTPS-only (model downloads); no bundled crypto → exempt, so
         # App Store Connect stops asking on every upload.
@@ -104,7 +104,7 @@ targets:
         # submission is rejected outright by ITMS validation. The plist is
         # generated from here, so keeping the two literals together is the
         # only place they can be kept in sync.
-        CFBundleShortVersionString: "1.0.0"
+        CFBundleShortVersionString: "1.0.1"
         CFBundleVersion: "18221476"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension

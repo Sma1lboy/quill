@@ -403,6 +403,31 @@ final class ScreenshotDriver3: XCTestCase {
         sleep(24)
     }
 
+    /// Opens settings and switches remote notes on, which is what actually
+    /// executes `RemoteCredential` / `RemoteShape` / `RemoteModels`
+    /// self-checks — a Debug build asserts here if any of that logic is wrong.
+    /// Leaves the toggle off again so a screenshot run isn't affected.
+    @MainActor
+    func testRemoteNotesSectionSelfChecks() throws {
+        let app = XCUIApplication()
+        app.launchPastOnboarding()
+        app.buttons["Settings"].firstMatch.tap()
+        sleep(1)
+        app.swipeUp(); app.swipeUp()
+        sleep(1)
+        let toggle = app.switches["remote notes"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5), "remote notes section not in settings")
+        let wasOn = (toggle.value as? String) == "1"
+        if !wasOn { toggle.tap() }
+        sleep(2)   // the expanded rows construct RemoteEnhance/RemoteShape
+        XCTAssertTrue(app.state == .runningForeground, "a self-check assertion fired")
+        // The key row must exist, and must NOT be showing a real key in clear.
+        XCTAssertTrue(app.staticTexts["api key"].exists, "key row missing")
+        if !wasOn { toggle.tap() }
+        sleep(1)
+        XCTAssertTrue(app.state == .runningForeground, "crashed toggling remote notes off")
+    }
+
     /// The re-transcribe confirmation. It must say audio is safe before the
     /// user throws a transcript away — holds the dialog open, then cancels so
     /// the run doesn't destroy the library it screenshotted.
@@ -439,5 +464,24 @@ final class ScreenshotDriver3: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 8), "no fully-processed session to open")
         row.tap()
         sleep(24)
+    }
+}
+
+final class RemoteShotDriver: XCTestCase {
+    /// Holds the remote notes section open, expanded, for screenshotting.
+    @MainActor
+    func testHoldRemoteSection() throws {
+        let app = XCUIApplication()
+        app.launchPastOnboarding()
+        app.buttons["Settings"].firstMatch.tap()
+        sleep(1)
+        // One swipe: the remote section sits above "notes prompt", so two
+        // swipes scroll clean past it to storage.
+        app.swipeUp()
+        let toggle = app.switches["remote notes"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        if (toggle.value as? String) != "1" { toggle.tap() }
+        sleep(20)
+        if (toggle.value as? String) == "1" { toggle.tap() }
     }
 }

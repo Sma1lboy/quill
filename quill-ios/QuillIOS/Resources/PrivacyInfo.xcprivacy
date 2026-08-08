@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Required-reason API declarations. Without this file an upload is rejected
+  outright (ITMS-91053: "Missing API declaration") before a build ever
+  reaches TestFlight — quill uses all four categories below.
+
+  Tracking and collected-data are empty, and that is the literal truth
+  rather than a posture: audio, transcripts, and notes never leave the
+  device, there is no account, no analytics, and no network call except the
+  whisper/qwen model downloads and the sideload version manifest.
+-->
 <plist version="1.0">
 <dict>
-	<!-- quill collects nothing. Audio, transcripts, and notes never leave
-	     the device; the only network traffic is one-time model weight
-	     downloads from Hugging Face, which carry no user data. -->
 	<key>NSPrivacyTracking</key>
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>
@@ -13,9 +20,9 @@
 	<array/>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
-		<!-- Settings the app stores for itself: selected model, language
-		     allow-set, enhance prompt, llama fallback toggle. -->
 		<dict>
+			<!-- Model choice, language allow-set, enhance prompt, onboarding
+			     flag — all this app's own settings. -->
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
@@ -23,14 +30,24 @@
 				<string>CA92.1</string>
 			</array>
 		</dict>
-		<!-- contentModificationDate on trashed session folders inside the
-		     app container, to sort and age them out. -->
 		<dict>
+			<!-- Trash purge reads contentModificationDate to drop entries
+			     older than 7 days (AppState.purgeTrash). -->
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
 				<string>C617.1</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- ModelCatalog refuses a multi-gigabyte model download that
+			     wouldn't fit, rather than letting it die at 90%. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>E174.1</string>
 			</array>
 		</dict>
 	</array>

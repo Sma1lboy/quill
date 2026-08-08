@@ -32,9 +32,13 @@ struct OnboardingView: View {
                         "what it is",
                         "tap once and talk. every take becomes a folder in Files — audio, transcript, structured notes — that you own and can delete by hand."
                     )
+                    // "no cloud" became conditional the day remote notes
+                    // landed, so this says what is still unconditional
+                    // (audio, transcription) and names the one opt-in rather
+                    // than making a promise settings can quietly break.
                     block(
                         "on-device",
-                        "whisper transcribes on this phone, ~100 languages including chinese. no account, no cloud, no subscription. your audio never leaves the device."
+                        "whisper transcribes on this phone, ~100 languages including chinese. no account, no subscription. your audio never leaves the device — that part is not a setting. notes are written on-device too, unless you turn on remote notes in settings, which sends the transcript text and nothing else."
                     )
                     // Model name and size come from the catalog, so this copy
                     // can't drift from the default the app actually downloads.
