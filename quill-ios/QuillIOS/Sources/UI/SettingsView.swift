@@ -194,7 +194,7 @@ struct SettingsView: View {
     private struct FooterSignature: View {
         var body: some View {
             VStack(alignment: .leading, spacing: 3) {
-                Text("quill \(UpdateChecker.currentVersion) (\(UpdateChecker.currentBuild))")
+                Text("quill \(AppVersion.current) (\(AppVersion.build))")
                     .font(Theme.mono(10, .medium))
                     .foregroundStyle(Theme.muted)
                 Text("whisperkit + apple foundation models · on-device")

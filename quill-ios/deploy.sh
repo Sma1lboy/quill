@@ -30,4 +30,4 @@ curl -s -X POST "https://brand-studio.sma1lboy.me/share?series=quill-ios-version
   --data-binary "{\"version\":\"$VERSION\",\"build\":\"$BUILD\",\"notes\":\"$NOTES\"}" \
   -o /dev/null -w "manifest published (HTTP %{http_code})\n"
 
-xcrun devicectl device process launch --terminate-existing --device "$DEVICE" com.digimata.quill-ios 2>/dev/null | grep -q Launched && echo launched
+xcrun devicectl device process launch --terminate-existing --device "$DEVICE" me.sma1lboy.quill 2>/dev/null | grep -q Launched && echo launched

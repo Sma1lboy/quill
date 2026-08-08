@@ -9,7 +9,9 @@ struct ContentView: View {
     @State private var path = NavigationPath()
     @State private var showSettings = false
     @State private var showSearch = false
+    #if SIDELOAD
     @StateObject private var updates = UpdateChecker()
+    #endif
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -22,11 +24,13 @@ struct ContentView: View {
                     onSettings: { showSettings = true }
                 )
 
+                #if SIDELOAD
                 if let manifest = updates.available {
                     UpdateBanner(manifest: manifest)
                         .padding(.horizontal, 20)
                         .padding(.top, 4)
                 }
+                #endif
 
                 if state.pipeline != .idle {
                     PipelineBanner(
@@ -86,7 +90,9 @@ struct ContentView: View {
             SearchView(state: state)
         }
         .quillOnboarding()
+        #if SIDELOAD
         .task { updates.check() }
+        #endif
         .animation(Theme.spring, value: state.isRecording)
         .animation(Theme.spring, value: state.pipeline)
         .tint(Theme.accent)
