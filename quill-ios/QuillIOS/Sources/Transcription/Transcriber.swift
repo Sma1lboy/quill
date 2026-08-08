@@ -396,10 +396,16 @@ actor Transcriber {
         return pipe
     }
 
-    /// Notes pass with fallback chain: FoundationModels (free, zero
-    /// download) → local Qwen via llama.cpp (opt-in 1 GB) → give up (retry
-    /// button in the session screen). Best-effort — a failure never costs
-    /// the transcript. Returns the reason it gave up, or nil on success.
+    /// Notes pass with fallback chain: remote (opt-in, off by default) →
+    /// FoundationModels (free, zero download) → local Qwen via llama.cpp
+    /// (opt-in 1 GB) → give up (retry button in the session screen).
+    /// Best-effort — a failure never costs the transcript. Returns the reason
+    /// it gave up, or nil on success.
+    ///
+    /// Remote goes first *only* when the user turned it on and pasted a key;
+    /// with it off the chain is byte-for-byte what it was before, and nothing
+    /// touches the network. Audio is never sent by any link in this chain —
+    /// only the transcript text.
     ///
     /// The session screen's re-run goes through here too rather than calling
     /// one backend directly: a phone without Apple Intelligence could run the
@@ -427,6 +433,26 @@ actor Transcriber {
 
         let fm = FoundationModelsEnhance()
         var reason = FoundationModelsEnhance.unavailableReason ?? "on-device model unavailable"
+
+        // Remote first when opted in — someone paying per token wants the
+        // model they chose, not whichever local one answered first. A remote
+        // failure falls through to the local chain rather than stranding the
+        // session, so a dead network or a spent key still produces notes.
+        let remote = RemoteEnhance()
+        if remote.isAvailable {
+            do {
+                try await remote.enhance(session: dir)
+                if FileManager.default.fileExists(atPath: notes.path) {
+                    log(dir, "notes.md written (remote · \(RemoteEnhance.model))")
+                    return nil
+                }
+                reason = "the remote model returned nothing to write"
+            } catch {
+                reason = error.localizedDescription
+                log(dir, "remote enhance failed: \(error)")
+            }
+        }
+
         if fm.isAvailable {
             do {
                 try await fm.enhance(session: dir)

@@ -66,6 +66,10 @@ struct SettingsView: View {
                         NotesModelSection()
                     }
 
+                    section("remote notes") {
+                        RemoteNotesSection()
+                    }
+
                     section("notes prompt") {
                         EnhancePromptEditor()
                     }

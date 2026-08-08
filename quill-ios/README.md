@@ -6,6 +6,22 @@ pause/resume, attach images). Everything transcribes on-device via
 WhisperKit (Whisper large-v3 turbo, ~100 languages incl. Chinese) and lands
 in `Documents/Recordings/` — visible in the Files app, folders the user owns.
 
+**What leaves the phone.** Audio never does — transcription is WhisperKit,
+on-device, with no setting that changes it. Notes are also written
+on-device by default (Apple FoundationModels, or the opt-in local Qwen).
+The one exception is **remote notes**, off unless the user turns it on and
+pastes their own API key: that sends the *transcript text* (plus OCR text
+from attached images) to the endpoint they chose, and nothing else. quill
+identifies itself honestly to that endpoint — it does not spoof another
+client's user-agent to unlock server behavior withheld from third parties.
+
+Remote notes speak either the Anthropic or the OpenAI wire format
+(`RemoteShape`), against any base URL — the vendor's own, a proxy, or a
+server on the LAN, which covers Ollama / vLLM / LM Studio / OpenRouter and
+most relays. The model is free text; `/v1/models` is probed only to suggest
+names (cached an hour per endpoint), and an endpoint that doesn't serve a
+catalog still works.
+
 Design language: `../DESIGN.md` (kobe DNA — porcelain/espresso/terracotta,
 mono kickers, bracket-chip wordmark). macOS sibling: `../quill-app`.
 

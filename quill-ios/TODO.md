@@ -32,6 +32,14 @@
 - [x] **App icon** — feather glyph, light+dark+tinted variants.
 
 ## Worth doing next (proposed)
+- [ ] **Claude subscription login (OAuth)** — second credential type beside
+      the API key, so a Claude Code / Max subscriber signs in instead of
+      pasting a key. Mechanism is PKCE + a localhost callback + an in-app
+      Safari sheet; the token goes in the same Keychain slot shape.
+      Deliberately NOT bundled with CLI-fingerprint spoofing (see the
+      settled decision below) — accept whatever a self-identifying third
+      party client is entitled to. Blocked on nothing but a decision to
+      spend the time.
 - [ ] **Mac handoff** — iCloud sync investigated and deferred: the folder
       contract is portable as-is, so share-as-zip + AirDrop is the shipping
       path. iOS declines multi-track (mic + system) sessions so the Mac still
@@ -43,6 +51,26 @@
 - Language setting is a multi-select allow-set; empty = auto.
 - Notes structuring: Apple FoundationModels on-device; EnhanceService seam
   for a server backend if quality tops out.
+- Remote notes are one more `EnhanceService`, not a provider framework.
+  quill has exactly one task (transcript → notes.md), so the 32-line
+  protocol plus `RemoteShape` (an enum over two wire formats — Anthropic
+  Messages and OpenAI chat/completions) is the whole abstraction. No
+  provider registry, no per-instance config. Between those two shapes and a
+  free-text base URL, essentially every proxy, relay and local server is
+  reachable.
+- The model field is free text and what the user types is what gets sent.
+  `/v1/models` is probed for *suggestions* only, cached 60 min per endpoint
+  (keyed by endpoint+shape, never by credential), prefix-then-substring
+  matched so a namespaced `anthropic/claude-sonnet-5` is still findable by
+  typing "claude". A proxy that serves a model it doesn't advertise must
+  keep working — discovery is never a gate.
+- The privacy line is layered, not absolute: audio and transcription are
+  unconditionally on-device; only remote notes send transcript text, only
+  when explicitly enabled with the user's own key. README, onboarding, and
+  the settings section all say this — change all three together.
+- quill sends its own honest User-Agent. Spoofing another client's
+  fingerprint to unlock server-side behavior withheld from third parties is
+  declined: it risks the user's account and can't be defended on review.
 - Recordings are user-owned folders under Documents (Files-visible).
 - The filesystem is the transcription queue; automatic attempts cap at 3
   (`transcribe_failures` in meta.json), then only the manual retry re-queues.
