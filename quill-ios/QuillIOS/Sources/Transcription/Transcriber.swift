@@ -104,26 +104,35 @@ actor Transcriber {
         Task { await drain() }
     }
 
+    /// Transcribe everything queued, then write notes for all of it.
+    ///
+    /// The two stages are separated rather than interleaved because whisper
+    /// (up to ~2 GB resident for turbo) and an LLM must never be loaded at
+    /// once — that pair is what jetsams the app. Interleaving them meant
+    /// dropping whisper after every single session and paying a full reload
+    /// (3.6s for turbo, and worse under memory pressure) for the next one. A
+    /// queue of ten sessions spent most of a minute doing nothing but
+    /// loading the same weights ten times.
+    ///
+    /// Now the model is loaded once, every session is transcribed against it,
+    /// and only then is it released for the notes pass. Nothing about the
+    /// memory rule changes — the two never co-reside — but the reload happens
+    /// once per drain instead of once per session.
     private func drain() async {
+        // Transcribed this drain, still needing notes. `enhance` skips a
+        // session that already has notes.md, so a re-entrant drain can't
+        // double-write.
+        var awaitingNotes: [URL] = []
+
         while !queue.isEmpty {
             let dir = queue.removeFirst()
             statusHandler?(.transcribing(session: dir.lastPathComponent, queued: queue.count, progress: 0))
             do {
                 try await transcribe(dir)
-                // Whisper (up to ~2GB resident for turbo) and any LLM must
-                // never be loaded together — the pair jetsams the app.
-                // Release whisper first; it reloads lazily for the next
-                // queue item.
-                pipe = nil
-                pipeModelID = nil
                 // Succeeded — drop any failure count from earlier attempts so
                 // the session doesn't carry a stale marker.
                 Self.clearFailures(in: dir)
-                _ = await enhance(dir)
-                let hasNotes = FileManager.default.fileExists(
-                    atPath: dir.appendingPathComponent("notes.md").path
-                )
-                Notify.transcriptReady(session: dir.lastPathComponent, hasNotes: hasNotes)
+                awaitingNotes.append(dir)
             } catch {
                 lastFailure = dir.lastPathComponent
                 let attempts = Self.failedAttempts(in: dir) + 1
@@ -134,12 +143,37 @@ actor Transcriber {
                 }
             }
         }
-        // Release model memory when the queue drains; reload lazily.
+
+        // Whisper goes before the first LLM touches memory, not after.
         pipe = nil
+        pipeModelID = nil
+
+        for dir in awaitingNotes {
+            _ = await enhance(dir)
+            let hasNotes = FileManager.default.fileExists(
+                atPath: dir.appendingPathComponent("notes.md").path
+            )
+            // Notified here rather than at transcript time: the transcript is
+            // an intermediate, and a notification that arrives before the
+            // note it announces is worse than one that waits.
+            Notify.transcriptReady(session: dir.lastPathComponent, hasNotes: hasNotes)
+        }
+
         statusHandler?(lastFailure.map { .failed(session: $0) } ?? .idle)
         draining = false
+        // Anything enqueued while we were writing notes (a take finished
+        // mid-pass) starts its own drain now.
         drainIfIdle()
     }
+
+    /// Below this much available memory, whisper is released before the
+    /// diarizer loads rather than letting the two overlap. The diarizer's
+    /// models are ~50 MB but Core ML's load spike is larger, so this leaves
+    /// real room rather than the bare model size.
+    ///
+    /// ponytail: one threshold, not a per-model table — the only device this
+    /// has to protect is one already near the limit.
+    private static let diarizerHeadroom: Int = 400 * 1_048_576
 
     /// Slice length adapts to the file: aim for ~8 progress steps, floored
     /// at 15s (whisper needs real context) and capped at 120s (memory bound
@@ -179,6 +213,12 @@ actor Transcriber {
         assert(!isMultiTrack(files: ["mic": "mic.caf"]))   // every iOS session
         assert(!isMultiTrack(files: [:]))                  // empty note folder
         assert(!isMultiTrack(files: nil))                  // no meta.json yet
+
+        // The headroom guard has to actually be reachable: set above what a
+        // phone ever reports and every session pays the reload the batching
+        // exists to avoid; set at 0 and the low-memory escape never fires.
+        assert(diarizerHeadroom > 0)
+        assert(diarizerHeadroom < 2_000 * 1_048_576, "threshold above any plausible budget — guard always taken")
     }
     #endif
 
@@ -301,12 +341,31 @@ actor Transcriber {
         var segments = checkpoint.segments
         segments.sort { $0.start_ms < $1.start_ms }
 
-        // Speaker separation — release whisper first (diarizer models are
-        // small but the decode caches aren't), then relabel by overlap.
-        // Multi-voice → S1/S2/…; single voice stays "me". Best-effort.
-        // (`pipe` here is the local let shadowing the actor property.)
-        self.pipe = nil
-        self.pipeModelID = nil
+        // Speaker separation runs here, with whisper still loaded: the
+        // diarizer's own models are ~50 MB, and the thing that actually
+        // competed for memory — the per-worker decode caches — is done being
+        // used the moment the slice loop above exits.
+        //
+        // It used to drop `pipe` first, which meant every session paid a full
+        // whisper reload even inside one drain, defeating any batching around
+        // it. Multi-voice → S1/S2/…; single voice stays "me". Best-effort.
+        //
+        // The one case where the old order was earning its keep: a device
+        // already near the limit with turbo resident. Rather than pay a
+        // reload on every session for it, drop whisper only when the headroom
+        // says to — the transcript is already complete either way, and a
+        // jetsam here would lose the diarization AND the notes pass.
+        // `os_proc_available_memory()` returns 0 in the simulator, which is
+        // "unknown", not "out of memory" — taken literally it releases the
+        // model on every session and undoes the batching everywhere it's
+        // cheapest to test. Treat 0 as no-limit; a real device always reports
+        // a real figure.
+        let available = os_proc_available_memory()
+        if available > 0, available < Self.diarizerHeadroom {
+            log(dir, "low memory (\(available / 1_048_576) MB) — releasing whisper before diarization")
+            self.pipe = nil
+            self.pipeModelID = nil
+        }
         do {
             let turns = try await Diarizer.speakerTurns(for: audio)
             if let relabeled = Diarizer.relabel(segments: segments, turns: turns) {
@@ -529,9 +588,15 @@ actor Transcriber {
     /// ponytail: ~300 MB/worker is an empirical turbo-KV estimate; refine
     /// per-model if smaller models want more parallelism.
     private static func decodeWorkerBudget() -> Int {
-        let available = Double(os_proc_available_memory())
+        // 0 means the platform won't say (the simulator always does), not
+        // that we're out — reading it literally pinned every simulator run to
+        // a single worker, which is exactly where transcription speed gets
+        // measured. Unknown budget takes the middle of the range rather than
+        // the floor.
+        let raw = os_proc_available_memory()
+        guard raw > 0 else { return 2 }
         let perWorker = 300.0 * 1_048_576
-        let budget = Int(available * 0.8 / perWorker)
+        let budget = Int(Double(raw) * 0.8 / perWorker)
         return min(4, max(1, budget))
     }
 
