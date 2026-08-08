@@ -20,7 +20,9 @@ struct SessionDetailView: View {
     @State private var renaming = false
     @State private var draftTitle = ""
     @State private var confirmDelete = false
+    @State private var confirmRetranscribe = false
     @State private var zipping = false
+    @State private var exporting = false
     @State private var share: SharePayload?
     /// Rename/share failure — `enhanceError` only renders when notes are
     /// absent, so these need their own line.
@@ -40,6 +42,9 @@ struct SessionDetailView: View {
             : dir.appendingPathComponent("transcript.md")
     }
     private var dir: URL { state.root.appendingPathComponent(id, isDirectory: true) }
+    private var hasAudio: Bool {
+        FileManager.default.fileExists(atPath: dir.appendingPathComponent("mic.caf").path)
+    }
     /// This session is the one the pipeline is currently transcribing.
     private var isQueued: Bool {
         if case .transcribing(let s, _, _) = state.pipeline, s == id { return true }
@@ -211,12 +216,24 @@ struct SessionDetailView: View {
                     Button("share folder") { shareFolder() }
                         .disabled(zipping)
 
+                    if hasAudio {
+                        // The recording on its own, as m4a — for Voice Memos,
+                        // a DAW, or anywhere that isn't quill.
+                        Button("export audio") { exportAudio() }
+                            .disabled(exporting)
+                    }
+
+                    if transcript != nil, !state.isBusy(id: id) {
+                        Divider()
+                        Button("re-transcribe") { confirmRetranscribe = true }
+                    }
+
                     Divider()
 
                     Button("delete", role: .destructive) { confirmDelete = true }
                         .disabled(state.isBusy(id: id))
                 } label: {
-                    if zipping {
+                    if zipping || exporting {
                         BrailleSpinner(size: 12).frame(width: 30, height: 30)
                     } else {
                         Image(systemName: "ellipsis.circle")
@@ -252,6 +269,24 @@ struct SessionDetailView: View {
             Button("cancel", role: .cancel) {}
         } message: {
             Text("the folder moves to .trash — recoverable from Files for 7 days")
+        }
+        // Re-transcribing throws away a transcript the user may have arrived
+        // at through a long queue wait — and any edits the notes carried.
+        // Audio is never at risk, which is what the message says.
+        .confirmationDialog(
+            "transcribe this again?",
+            isPresented: $confirmRetranscribe,
+            titleVisibility: .visible
+        ) {
+            // No optimistic clear: `retranscribe` refuses a session it can't
+            // re-queue, and blanking the screen first would show an empty
+            // note that never refills. `reload()` follows the actual files.
+            Button("re-transcribe", role: .destructive) {
+                state.retranscribe(id: id)
+            }
+            Button("cancel", role: .cancel) {}
+        } message: {
+            Text("the current transcript and notes are replaced · your audio is untouched")
         }
         .sheet(item: $share) { payload in
             ActivityView(url: payload.url)
@@ -307,27 +342,39 @@ struct SessionDetailView: View {
 
     /// Re-run the LLM structure pass with the current prompt; overwrites
     /// notes.md (transcript is untouched, so this is always safe).
+    ///
+    /// Goes through the transcriber's own chain rather than calling
+    /// FoundationModels directly — a phone without Apple Intelligence has a
+    /// working qwen fallback, and this button used to refuse outright on
+    /// exactly the devices that needed it.
     private func rerunEnhance() {
         guard !enhancing else { return }
-        let enhancer = FoundationModelsEnhance()
-        guard enhancer.isAvailable else {
-            enhanceError = FoundationModelsEnhance.unavailableReason
-            return
-        }
         enhancing = true
         enhanceError = nil
-        let sessionDir = dir
         Task {
-            do {
-                try? FileManager.default.removeItem(
-                    at: sessionDir.appendingPathComponent("notes.md")
-                )
-                try await enhancer.enhance(session: sessionDir)
-            } catch {
-                enhanceError = "notes failed: \(error.localizedDescription)"
-            }
+            let reason = await state.regenerateNotes(id: id)
+            enhanceError = reason.map { "notes failed: \($0)" }
             enhancing = false
             reload()
+        }
+    }
+
+    /// Hand the raw recording to the share sheet as an m4a — Voice Memos,
+    /// Files, AirDrop to a Mac, whatever the user records with elsewhere.
+    /// Transcoding a long take takes a moment, so the menu glyph spins.
+    private func exportAudio() {
+        guard !exporting else { return }
+        exporting = true
+        actionError = nil
+        let sessionDir = dir
+        let name = session?.title ?? id
+        Task {
+            do {
+                share = SharePayload(url: try await AudioExport.m4a(of: sessionDir, named: name))
+            } catch {
+                actionError = error.localizedDescription
+            }
+            exporting = false
         }
     }
 

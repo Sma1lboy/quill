@@ -42,6 +42,13 @@ Documents/Recordings/<yyyy.MM.dd-HHmm>/
   transcribe.log   per-session pipeline log
 ```
 
+Only the recordings are backed up to iCloud. The whisper weights under
+`Documents/huggingface/` and the qwen GGUF under `Documents/llm/` are flagged
+`isExcludedFromBackup` at every launch — up to 4.3 GB of re-downloadable
+files, which would otherwise eat the user's quota and make the backup that
+carries their recordings fail. Sessions themselves survive delete-and-
+reinstall via iCloud restore, and are visible in Files either way.
+
 `meta.json` keys beyond the recording facts: `title` (generated or renamed
 — absent means fall back to the timestamp) and `transcribe_failures` (count
 of failed automatic attempts, cleared on success). Every pass merges into

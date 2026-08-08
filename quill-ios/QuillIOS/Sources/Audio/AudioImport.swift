@@ -156,7 +156,9 @@ enum AudioImport {
     /// Round-trip a generated tone through the importer: the queue only ever
     /// gets mic.caf, so the one thing that must hold is that an arbitrary
     /// source lands as a readable mono CAF of the right length, and that a
-    /// second import can't clobber it.
+    /// second import can't clobber it. The exporter rides along: the same
+    /// tone goes back out as m4a, since an export nobody can open is the
+    /// same failure as an import nobody can make.
     nonisolated(unsafe) private static var checked = false
 
     static func selfCheck() async {
@@ -210,6 +212,101 @@ enum AudioImport {
             _ = try await into(dir, from: src)
             assertionFailure("second import overwrote existing audio")
         } catch {}
+
+        // …and straight back out: the share sheet gets an .m4a, not the .caf.
+        guard let exported = try? await AudioExport.m4a(of: dir, named: "tone check") else {
+            assertionFailure("export of a freshly imported session threw")
+            return
+        }
+        assert(exported.pathExtension == "m4a", "exported \(exported.lastPathComponent), not m4a")
+        assert(exported.lastPathComponent == "tone check.m4a", "title did not name the file")
+        guard let back = try? AVAudioFile(forReading: exported) else {
+            assertionFailure("exported m4a is not readable — nothing else will open it either")
+            return
+        }
+        let exportedSeconds = Double(back.length) / back.fileFormat.sampleRate
+        assert(abs(exportedSeconds - 2) < 0.5, "export came back as \(exportedSeconds)s, expected ~2")
+
+        // Titles are free text and go straight into a path.
+        assert(AudioExport.filename(from: "weekly planning · pricing") == "weekly planning · pricing")
+        assert(!AudioExport.filename(from: "9/13 sync").contains("/"), "a slash would write outside the box")
+        assert(AudioExport.filename(from: "   ") == "recording", "blank title must not make a dotfile")
+        assert(AudioExport.filename(from: "").isEmpty == false)
+        assert(AudioExport.filename(from: String(repeating: "x", count: 400)).count == 100)
     }
     #endif
+}
+
+/// The other direction: hand the raw audio to Voice Memos, Files, another
+/// recording app, or a Mac over AirDrop.
+///
+/// quill keeps `mic.caf` forever and promises never to replace it, but a CAF
+/// is a container almost nothing outside Apple's own frameworks will open —
+/// exporting it as-is is technically "your audio" and practically a file the
+/// user can't use. So the export transcodes to `.m4a`, which every recording
+/// app, DAW, and browser takes.
+enum AudioExport {
+    enum ExportError: LocalizedError {
+        case noAudio
+        case failed(Error?)
+
+        var errorDescription: String? {
+            switch self {
+            case .noAudio: return "this session has no audio to export"
+            case .failed(let e):
+                return "couldn't export the audio: \(e?.localizedDescription ?? "unknown error")"
+            }
+        }
+    }
+
+    /// Transcode `dir/mic.caf` to an m4a in a fresh temp box, named after the
+    /// session so it lands in Files as `weekly planning.m4a` rather than
+    /// `mic.m4a`. Returns the file to hand to the share sheet.
+    ///
+    /// ponytail: a temp box per export, reaped by iOS — nothing to clean up,
+    /// nothing to collide with, same as `SessionActions.zip`.
+    static func m4a(of dir: URL, named title: String) async throws -> URL {
+        let source = dir.appendingPathComponent("mic.caf")
+        guard FileManager.default.fileExists(atPath: source.path) else {
+            throw ExportError.noAudio
+        }
+
+        let box = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: box, withIntermediateDirectories: true)
+        let dst = box.appendingPathComponent("\(filename(from: title)).m4a")
+
+        let asset = AVURLAsset(url: source)
+        guard let export = AVAssetExportSession(
+            asset: asset, presetName: AVAssetExportPresetAppleM4A
+        ) else {
+            throw ExportError.failed(nil)
+        }
+
+        if #available(iOS 18.0, *) {
+            try await export.export(to: dst, as: .m4a)
+        } else {
+            export.outputURL = dst
+            export.outputFileType = .m4a
+            await export.export()
+            guard export.status == .completed else {
+                throw ExportError.failed(export.error)
+            }
+        }
+        return dst
+    }
+
+    /// A session title is free text — it can hold "/" (which would silently
+    /// write into a directory that isn't there) or be empty after a rename.
+    /// Neither is worth an error dialog, so both fall back.
+    static func filename(from title: String) -> String {
+        let cleaned = title
+            .components(separatedBy: CharacterSet(charactersIn: "/\\:\0"))
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // 100 chars leaves room under every filesystem limit without cutting
+        // a real title short.
+        let clipped = String(cleaned.prefix(100))
+        return clipped.isEmpty ? "recording" : clipped
+    }
 }

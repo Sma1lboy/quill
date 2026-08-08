@@ -119,7 +119,7 @@ actor Transcriber {
                 // Succeeded — drop any failure count from earlier attempts so
                 // the session doesn't carry a stale marker.
                 Self.clearFailures(in: dir)
-                await enhanceWithFallback(dir)
+                _ = await enhance(dir)
                 let hasNotes = FileManager.default.fileExists(
                     atPath: dir.appendingPathComponent("notes.md").path
                 )
@@ -399,12 +399,34 @@ actor Transcriber {
     /// Notes pass with fallback chain: FoundationModels (free, zero
     /// download) → local Qwen via llama.cpp (opt-in 1 GB) → give up (retry
     /// button in the session screen). Best-effort — a failure never costs
-    /// the transcript.
-    private func enhanceWithFallback(_ dir: URL) async {
+    /// the transcript. Returns the reason it gave up, or nil on success.
+    ///
+    /// The session screen's re-run goes through here too rather than calling
+    /// one backend directly: a phone without Apple Intelligence could run the
+    /// automatic pass on qwen but not the manual re-run, which read as "the
+    /// button is broken".
+    func enhance(_ dir: URL, force: Bool = false) async -> String? {
         let notes = dir.appendingPathComponent("notes.md")
-        guard !FileManager.default.fileExists(atPath: notes.path) else { return }
+        // A re-run has to clear notes.md first — every backend below decides
+        // it succeeded by the file appearing. But if the whole chain then
+        // fails, deleting was the only lasting effect: the user pressed
+        // "re-run" and lost the notes they had. Hold the old bytes and put
+        // them back on the way out.
+        var stashed: Data?
+        if force {
+            stashed = try? Data(contentsOf: notes)
+            try? FileManager.default.removeItem(at: notes)
+        } else if FileManager.default.fileExists(atPath: notes.path) {
+            return nil
+        }
+        defer {
+            if let stashed, !FileManager.default.fileExists(atPath: notes.path) {
+                try? stashed.write(to: notes, options: .atomic)
+            }
+        }
 
         let fm = FoundationModelsEnhance()
+        var reason = FoundationModelsEnhance.unavailableReason ?? "on-device model unavailable"
         if fm.isAvailable {
             do {
                 try await fm.enhance(session: dir)
@@ -414,25 +436,65 @@ actor Transcriber {
                 // a lie and skip the llama fallback.
                 if FileManager.default.fileExists(atPath: notes.path) {
                     log(dir, "notes.md written (foundation-models)")
-                    return
+                    return nil
                 }
+                reason = "the model returned nothing to write"
                 log(dir, "foundation-models produced no notes")
             } catch {
+                reason = error.localizedDescription
                 log(dir, "foundation-models enhance failed: \(error)")
             }
         } else {
-            log(dir, "foundation-models unavailable: \(FoundationModelsEnhance.unavailableReason ?? "?")")
+            log(dir, "foundation-models unavailable: \(reason)")
         }
 
         let llama = LlamaEnhance()
         if llama.isAvailable {
             do {
                 try await llama.enhance(session: dir)
-                log(dir, "notes.md written (qwen-local)")
+                if FileManager.default.fileExists(atPath: notes.path) {
+                    log(dir, "notes.md written (qwen-local)")
+                    return nil
+                }
+                reason = "the local model returned nothing to write"
             } catch {
+                reason = error.localizedDescription
                 log(dir, "qwen enhance failed: \(error)")
             }
         }
+        return reason
+    }
+
+    /// Throw away transcript.json/.md and run the whole pipeline again —
+    /// the user's answer to a transcript that came out in the wrong language,
+    /// on the wrong model, or garbled. mic.caf is never touched, so this is
+    /// always safe and always repeatable.
+    ///
+    /// The checkpoint has to go too: `transcribe` resumes from partial.json,
+    /// so leaving it would "re-transcribe" by replaying the exact segments
+    /// the user is trying to get rid of.
+    /// Returns false when nothing would pick the session up again, in which
+    /// case nothing is deleted.
+    @discardableResult
+    func retranscribe(_ dir: URL) -> Bool {
+        // `enqueue` bails silently on a session it won't take — no audio, or a
+        // multi-track one synced from the Mac. Deleting first and discovering
+        // that after would strand the session with no transcript and nothing
+        // coming to rebuild it, which is the one outcome this feature must not
+        // produce. Check enqueue's own conditions before touching a file.
+        guard FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("mic.caf").path
+        ), !Self.isMultiTrack(dir) else { return false }
+
+        let fm = FileManager.default
+        for name in ["transcript.json", "transcript.md", "partial.json"] {
+            try? fm.removeItem(at: dir.appendingPathComponent(name))
+        }
+        // Old notes describe a transcript that no longer exists. Drop them so
+        // the queue's enhance stage writes fresh ones rather than skipping.
+        try? fm.removeItem(at: dir.appendingPathComponent("notes.md"))
+        enqueue(dir)
+        return true
     }
 
     /// Workers = 80% of the memory still available to the process (the

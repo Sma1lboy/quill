@@ -44,6 +44,10 @@ final class AppState: ObservableObject {
         self.root = root ?? docs.appendingPathComponent("Recordings", isDirectory: true)
         try? FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
         Self.purgeTrash(root: self.root)
+        // Recordings are backed up; multi-gigabyte re-downloadable weights
+        // are not. Runs every launch so weights downloaded by an older build
+        // get the flag too.
+        ModelCatalog.excludeModelsFromBackup()
         refreshSessions()
 
         // Screenshot harness: QUILL_PREVIEW=recording fakes a live session
@@ -262,6 +266,37 @@ final class AppState: ObservableObject {
             // badge even if enqueue bailed and no status callback fires.
             refreshSessions()
         }
+    }
+
+    /// Throw the transcript away and run the whole pipeline again — for a
+    /// take that came out in the wrong language, on a model since upgraded,
+    /// or garbled. Audio is never touched.
+    func retranscribe(id: String) {
+        guard !isBusy(id: id) else { return }
+        let dir = root.appendingPathComponent(id, isDirectory: true)
+        Task { [transcriber] in
+            if await !transcriber.retranscribe(dir) {
+                lastError = "nothing to re-transcribe — this session has no audio"
+            }
+            refreshSessions()
+        }
+    }
+
+    /// Re-run the notes pass over the existing transcript, through the same
+    /// backend chain the automatic pass uses. Returns the reason it failed,
+    /// or nil on success.
+    ///
+    /// Refuses while the queue is transcribing: whisper (up to ~2 GB
+    /// resident) and an LLM must never be loaded at once — that pair is what
+    /// jetsams the app, and the queue's own stages are ordered to avoid it.
+    func regenerateNotes(id: String) async -> String? {
+        if case .transcribing = pipeline {
+            return "wait for the current transcription to finish"
+        }
+        let dir = root.appendingPathComponent(id, isDirectory: true)
+        let reason = await transcriber.enhance(dir, force: true)
+        refreshSessions()
+        return reason
     }
 
     /// Dismiss the failure banner. `Transcriber.lastFailure` is only cleared

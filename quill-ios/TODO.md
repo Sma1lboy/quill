@@ -17,7 +17,9 @@
 - [x] **Search** — case/diacritic-insensitive substring over transcript.json
       across sessions; results jump to the segment.
 - [x] **Session actions** — rename (title in meta.json), delete (with
-      confirmation), share the whole folder as a zip.
+      confirmation), share the whole folder as a zip, export the audio alone
+      as m4a (Voice Memos, a DAW, AirDrop to the Mac — CAF opens almost
+      nowhere), re-transcribe from the audio, re-run the notes pass.
 - [x] **Auto-title** — FoundationModels one-liner per session replacing
       "Today 7:05 PM" with a content title ("weekly planning · pricing").
 - [x] **Image understanding** (#14) — Vision OCR over images/, cached in the
@@ -45,3 +47,10 @@
 - The filesystem is the transcription queue; automatic attempts cap at 3
   (`transcribe_failures` in meta.json), then only the manual retry re-queues.
 - Deleting moves the folder to Documents/.trash, purged after 7 days.
+- Model weights are excluded from iCloud backup; recordings are not. A
+  TestFlight install over an existing one keeps Documents either way — the
+  exclusion is about not blowing the user's quota (and not failing the
+  backup that carries the recordings) on 4.3 GB we can re-download.
+- Re-transcribe clears transcript + partial + notes and re-queues; it
+  refuses (touching nothing) on a session the queue wouldn't take back.
+  Re-running notes restores the previous notes.md if the whole chain fails.

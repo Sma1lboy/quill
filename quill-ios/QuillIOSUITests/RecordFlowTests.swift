@@ -379,4 +379,65 @@ final class ScreenshotDriver3: XCTestCase {
         app.swipeUp(); app.swipeUp()
         sleep(24)
     }
+
+    /// Holds the session actions menu open on a fully-processed session, so
+    /// the new rows (export audio / re-transcribe) can be screenshotted from
+    /// outside. The NOTE row is the one with audio + transcript + notes, and
+    /// therefore the only one where every item is enabled.
+    @MainActor
+    func testHoldActionsMenuOnNotedSession() throws {
+        let app = XCUIApplication()
+        app.launchPastOnboarding()
+        let row = app.descendants(matching: .any)
+            .matching(identifier: "NOTE").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 8), "no fully-processed session to open")
+        row.tap()
+        let menu = app.buttons["Session actions"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5), "actions menu not in toolbar")
+        menu.tap()
+        XCTAssertTrue(
+            app.buttons["export audio"].waitForExistence(timeout: 3),
+            "export audio missing from the menu"
+        )
+        XCTAssertTrue(app.buttons["re-transcribe"].exists, "re-transcribe missing from the menu")
+        sleep(24)
+    }
+
+    /// The re-transcribe confirmation. It must say audio is safe before the
+    /// user throws a transcript away — holds the dialog open, then cancels so
+    /// the run doesn't destroy the library it screenshotted.
+    @MainActor
+    func testHoldRetranscribeConfirmation() throws {
+        let app = XCUIApplication()
+        app.launchPastOnboarding()
+        let row = app.descendants(matching: .any)
+            .matching(identifier: "NOTE").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 8), "no fully-processed session to open")
+        row.tap()
+        app.buttons["Session actions"].tap()
+        let item = app.buttons["re-transcribe"]
+        XCTAssertTrue(item.waitForExistence(timeout: 3), "re-transcribe missing from the menu")
+        item.tap()
+        XCTAssertTrue(
+            app.staticTexts["transcribe this again?"].waitForExistence(timeout: 3),
+            "re-transcribe ran without confirmation"
+        )
+        sleep(20)
+        // Back out — same reason as the delete test: never wreck the library.
+        let cancel = app.sheets.buttons["cancel"].firstMatch
+        if cancel.waitForExistence(timeout: 2) { cancel.tap() } else { app.terminate() }
+    }
+
+    /// Same session with the menu closed — the notes screen itself, where the
+    /// "re-run" affordance sits next to the notes kicker.
+    @MainActor
+    func testHoldNotedSessionDetail() throws {
+        let app = XCUIApplication()
+        app.launchPastOnboarding()
+        let row = app.descendants(matching: .any)
+            .matching(identifier: "NOTE").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 8), "no fully-processed session to open")
+        row.tap()
+        sleep(24)
+    }
 }

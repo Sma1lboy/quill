@@ -149,7 +149,55 @@ enum ModelCatalog {
     /// ponytail: flat percentage, not a per-model measured working set.
     static func required(_ bytes: Int64) -> Int64 { bytes + bytes / 100 * 15 }
 
+    /// Keep the re-downloadable weights out of iCloud backup.
+    ///
+    /// Everything under Documents is backed up, and quill parks up to 4.3 GB
+    /// of model weights there (whisper turbo + qwen). That is the user's
+    /// iCloud quota spent on files we can fetch again — and at that size the
+    /// backup itself starts failing, which takes the recordings down with it.
+    /// The recordings are the only thing in the folder that can't be
+    /// regenerated, so they're the one thing that must survive a restore (or
+    /// a TestFlight reinstall onto a wiped device). Apple's data-storage
+    /// guideline says the same thing, and beta review enforces it.
+    ///
+    /// Called at launch (covers weights already on disk) and after each
+    /// download. Setting the flag on a folder covers everything under it.
+    static func excludeModelsFromBackup() {
+        #if DEBUG
+        selfCheckBackup()
+        #endif
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        exclude(docs.appendingPathComponent("huggingface", isDirectory: true))
+        exclude(docs.appendingPathComponent("llm", isDirectory: true))
+    }
+
+    /// Idempotent, and silent on a folder that doesn't exist yet — the next
+    /// call after the download catches it.
+    private static func exclude(_ url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        var url = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
+    }
+
     #if DEBUG
+    /// The flag has to actually land: a silent failure here is invisible
+    /// until someone's 4 GB iCloud backup stops completing.
+    static func selfCheckBackup() {
+        let fm = FileManager.default
+        let box = fm.temporaryDirectory
+            .appendingPathComponent("quill-backupcheck-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: box) }
+        exclude(box) // missing folder — must not crash, must not create it
+        assert(!fm.fileExists(atPath: box.path), "exclude() created a folder it was only asked to flag")
+        try? fm.createDirectory(at: box, withIntermediateDirectories: true)
+        exclude(box)
+        let flagged = (try? box.resourceValues(forKeys: [.isExcludedFromBackupKey]))?
+            .isExcludedFromBackup
+        assert(flagged == true, "isExcludedFromBackup did not stick")
+    }
+
     /// Both directions of the comparison: a false refusal strands a user who
     /// had room, and a missing one lets a 3 GB download die at 90%.
     static func selfCheck() {
