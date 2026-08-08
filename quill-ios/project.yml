@@ -10,7 +10,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
-    DEVELOPMENT_TEAM: "68562FABX7"
+    DEVELOPMENT_TEAM: "2G2H3TQ8J8"
   configs:
     # Sideload-only affordances (the update-manifest banner) compile into
     # Debug — which is what deploy.sh builds — and out of the Release
@@ -62,7 +62,7 @@ targets:
       properties:
         CFBundleDisplayName: quill
         CFBundleShortVersionString: "1.0.0"
-        CFBundleVersion: "18221475"
+        CFBundleVersion: "18221476"
         # HTTPS-only (model downloads); no bundled crypto → exempt, so
         # App Store Connect stops asking on every upload.
         ITSAppUsesNonExemptEncryption: false
@@ -84,6 +84,11 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: quill App Store
 
   QuillWidgets:
     type: app-extension
@@ -100,7 +105,7 @@ targets:
         # generated from here, so keeping the two literals together is the
         # only place they can be kept in sync.
         CFBundleShortVersionString: "1.0.0"
-        CFBundleVersion: "18221475"
+        CFBundleVersion: "18221476"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
@@ -108,6 +113,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: me.sma1lboy.quill.widgets
         CODE_SIGN_STYLE: Automatic
         SKIP_INSTALL: YES
+      configs:
+        release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: quill widgets App Store
 
   QuillIOSUITests:
     type: bundle.ui-testing
